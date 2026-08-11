@@ -15,6 +15,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 
 import * as alerts from './alerts.js'
+import * as artifact from './artifact.js'
 import { HORIZON_DAYS, ROOT } from './config.js'
 import { applyDates, applyPopularity, applyTrending, byReleaseDate, score } from './scoring.js'
 import * as snapshot from './snapshot.js'
@@ -134,6 +135,9 @@ async function main(): Promise<void> {
   await writeFile(path.join(OUT_DIR, 'radar.json'), JSON.stringify(output, null, 2))
   await snapshot.save(ranked, generatedAt)
   console.log(`\n[out] wrote ${ranked.length} titles to out/radar.json`)
+
+  await artifact.build(output)
+  console.log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
 
   report(ranked, inHorizon, fired, top, horizonDays)
 }

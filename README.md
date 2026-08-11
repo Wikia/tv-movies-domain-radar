@@ -147,10 +147,38 @@ released.
 
 ## Outputs
 
-- **`out/radar.json`** — the single artifact. Contains `titles` (chronological),
-  `trending`, `changes`, `alerts`, and headline `counts`. Both the dashboard and
-  the Slack notifier read this file and nothing else, so they can't drift apart.
+- **`out/radar.json`** — the single source of truth. Contains `titles`
+  (chronological), `trending`, `changes`, `alerts`, and headline `counts`. The
+  dashboard, the static page, and the Slack notifier all read this one file, so
+  they can't drift apart.
+- **`out/dashboard.html`** — self-contained page, data baked in. Open it
+  directly; no server, no network.
+- **`out/dashboard.artifact.html`** — the same page as a body-only fragment for
+  publishing as a shareable Artifact (the host supplies the skeleton).
 - **`data/snapshots/latest.json`** + a dated copy — the diff baseline. Git-ignored.
+
+### Two surfaces, one dataset
+
+| | Who it's for | Needs a server |
+|---|---|---|
+| `web/` (React) | the operator — filters, search, live proxy | yes |
+| `out/dashboard*.html` | anyone you share it with | no |
+
+## Visual identity
+
+A **broadcast transmission log**, deliberately *not* the gaming radar's look.
+That page is light-first cool blue-grey with teal/amber on rounded, shadowed
+cards; this one is graphite ground, a single on-air red spent only where
+attention is owed, a muted broadcast cyan for corroborated-not-urgent, condensed
+uppercase headers over tabular mono, square edges, hairline rules, and no
+shadows or cards at all.
+
+Colour is semantic, never decorative: **on-air red** = needs attention,
+**cyan** = a corroborated shift, **green** = an addition.
+
+The tokens are duplicated in `src/artifact.ts` (CSS) and `web/src/index.css`
+(Tailwind `@theme`) — the static page can't import from the React app. **Change
+one, change the other.**
 
 ## Layout
 
@@ -163,6 +191,7 @@ src/                    # pipeline + server (zero runtime dependencies)
 ├── scoring.ts          # merge, normalize, weighted score + confidence cap
 ├── snapshot.ts         # save/load/diff — the "don't miss anything" mechanism
 ├── alerts.ts           # alert rules
+├── artifact.ts         # self-contained HTML page + artifact fragment
 └── sources/neutron.ts  # the only network dependency
 
 web/                    # React + Tailwind dashboard (build-time deps only)
@@ -182,6 +211,7 @@ as a number invites ranking on noise.
 - [x] Pipeline: fetch → score → diff → `out/radar.json`
 - [x] Server: `/api/radar`, live proxy, static host
 - [x] Dashboard: React + Tailwind, alerts / schedule / trending / changes
+- [x] Shareable static page + publishable Artifact fragment
 - [ ] Slack notifier (needs a channel + incoming webhook)
 - [ ] Dockerfile + k8s manifests for GKE
 - [ ] First-party Fandom signal (deferred — availability unconfirmed)

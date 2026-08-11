@@ -3,6 +3,8 @@ import type { ReactNode } from 'react'
 import type { Title } from '../types'
 import { hasDemandSignal } from '../types'
 
+/** A ruled section, not a card. The heavy top rule and condensed uppercase
+ * label are the page's structural signature — see index.css. */
 export function Panel({
   title,
   subtitle,
@@ -15,12 +17,10 @@ export function Panel({
   action?: ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-border bg-panel">
-      <header className="flex items-baseline justify-between gap-4 border-b border-border px-5 py-4">
-        <div>
-          <h2 className="text-sm font-semibold tracking-wide uppercase">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-muted">{subtitle}</p>}
-        </div>
+    <section>
+      <header className="flex items-baseline gap-3 border-b border-ink pb-1.5">
+        <h2 className="eyebrow tracking-[0.1em]">{title}</h2>
+        {subtitle && <p className="figure ml-auto text-[11px] text-faint">{subtitle}</p>}
         {action}
       </header>
       {children}
@@ -34,52 +34,45 @@ export function StatTile({
   hint,
 }: {
   label: string
-  value: number | string
+  value: ReactNode
   hint?: string
 }) {
   return (
-    <div className="rounded-xl border border-border bg-panel px-5 py-4">
-      <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
-      <div className="mt-1 text-3xl font-semibold tabular-nums">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
+    <div className="border-r border-rule-soft py-3.5 pr-4 last:border-r-0">
+      <div className="figure text-[26px] leading-none font-semibold tracking-tight">{value}</div>
+      <div className="eyebrow mt-1.5 text-muted">{label}</div>
+      {hint && <div className="mt-0.5 text-[11px] text-faint">{hint}</div>}
     </div>
   )
 }
 
 export function TypeBadge({ type }: { type: Title['type'] }) {
-  return (
-    <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold tracking-wide text-muted uppercase">
-      {type === 'movie' ? 'Film' : 'TV'}
-    </span>
-  )
+  return <span className="eyebrow text-faint">{type === 'movie' ? 'Film' : 'TV'}</span>
 }
 
-/** The score badge deliberately reads as "uncorroborated" rather than showing a
- * number when a title has no demand signal. A capped score of 40 is an absence
- * of evidence, not a measurement, and showing it as a figure invites people to
- * rank on noise — see the confidence cap in the README. */
+/** A capped score is an absence of evidence, not a measurement — unbacked
+ * titles show a dash so nobody ranks on noise. See the confidence cap in the
+ * README. */
 export function ScoreBadge({ title }: { title: Title }) {
   if (!hasDemandSignal(title)) {
     return (
       <span
-        className="rounded-md border border-border px-2 py-1 text-xs font-medium text-muted"
+        className="figure w-10 text-right text-faint"
         title="No demand signal — scheduled only. Score is capped and not meaningful."
       >
         —
       </span>
     )
   }
-  const tone = title.score >= 70 ? 'text-hot' : title.score >= 50 ? 'text-warm' : 'text-cool'
+  const tone =
+    title.score >= 70 ? 'text-onair font-semibold' : title.score >= 50 ? 'text-signal' : ''
   return (
-    <span
-      className={`rounded-md border border-border px-2 py-1 text-xs font-semibold tabular-nums ${tone}`}
-      title="Blended demand score (0–100)"
-    >
+    <span className={`figure w-10 text-right ${tone}`} title="Blended demand score (0–100)">
       {title.score.toFixed(0)}
     </span>
   )
 }
 
 export function Empty({ children }: { children: ReactNode }) {
-  return <p className="px-5 py-8 text-center text-sm text-muted">{children}</p>
+  return <p className="py-5 text-[13px] text-faint">{children}</p>
 }

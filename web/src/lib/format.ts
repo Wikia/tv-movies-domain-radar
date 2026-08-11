@@ -11,6 +11,15 @@ export function formatDate(iso: string | null): string {
   })
 }
 
+/** Short weekday — a schedule is read by day-of-week as much as by date. */
+export function formatWeekday(iso: string | null): string {
+  if (!iso) return ''
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: 'UTC',
+  })
+}
+
 export function formatMonth(iso: string): string {
   const date = new Date(`${iso}T00:00:00Z`)
   return date.toLocaleDateString('en-US', {
@@ -47,12 +56,13 @@ export const REASON_LABEL: Record<AlertReason, string> = {
   'date-changed': 'date moved',
 }
 
-/** Each reason gets its own colour so the alert list is scannable at a glance. */
+/** Semantic, not decorative: on-air marks urgency, signal marks a corroborated
+ * shift, ok marks an addition. Colour is doing work here, not styling. */
 export const REASON_STYLE: Record<AlertReason, string> = {
-  'trending-and-imminent': 'bg-hot/15 text-hot border-hot/30',
-  'high-score': 'bg-warm/15 text-warm border-warm/30',
-  'newly-added': 'bg-calm/15 text-calm border-calm/30',
-  'date-changed': 'bg-cool/15 text-cool border-cool/30',
+  'trending-and-imminent': 'border-onair text-onair bg-onair/10',
+  'high-score': 'border-onair text-onair bg-onair/10',
+  'newly-added': 'border-ok text-ok',
+  'date-changed': 'border-signal text-signal bg-signal/10',
 }
 
 /** Group titles by release month, preserving chronological order. */

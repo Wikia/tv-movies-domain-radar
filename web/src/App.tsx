@@ -56,7 +56,7 @@ export default function App() {
   if (state.status === 'error') {
     return (
       <Centered>
-        <p className="font-medium text-hot">{state.message}</p>
+        <p className="font-medium text-onair">{state.message}</p>
         {state.hint && <p className="mt-2 text-sm text-muted">{state.hint}</p>}
       </Centered>
     )
@@ -66,48 +66,57 @@ export default function App() {
   const withDemand = data.titles.filter(hasDemandSignal).length
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">TV &amp; Movies Radar</h1>
-          <p className="mt-1 text-sm text-muted">
-            Upcoming releases and what's gaining traction · generated{' '}
-            {formatTimestamp(data.generatedAt)}
-          </p>
-        </div>
+    <div className="mx-auto max-w-6xl px-6 py-8">
+      <header className="mb-7 border-t-2 border-ink pt-3.5">
+        <p className="eyebrow mb-1.5 text-muted">Fandom · TV &amp; Movies domain</p>
+        <h1 className="font-display text-[clamp(30px,5vw,46px)] leading-[0.96] font-bold tracking-tight uppercase">
+          Release Radar
+        </h1>
+        <p className="figure mt-2.5 text-[11px] text-faint">
+          <span className="eyebrow inline-flex items-center gap-1.5 text-onair">
+            <span className="inline-block size-1.5 rounded-full bg-onair" />
+            {data.counts.alerts} on watch
+          </span>
+          {' · '}generated {formatTimestamp(data.generatedAt)} · source: neutron-api
+        </p>
       </header>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-7 grid grid-cols-2 border-y border-rule lg:grid-cols-4">
         <StatTile label="Alerts" value={data.counts.alerts} hint="meet an alert rule" />
         <StatTile
-          label={`Next ${data.horizonDays}d`}
+          label={`Next ${data.horizonDays} days`}
           value={data.counts.inHorizon}
           hint="titles landing"
         />
-        <StatTile label="Upcoming" value={data.counts.upcoming} hint="on the full calendar" />
+        <StatTile label="Upcoming" value={data.counts.upcoming} hint="full calendar" />
         <StatTile
           label="Demand signal"
-          value={`${withDemand}/${data.counts.upcoming}`}
+          value={
+            <>
+              {withDemand}
+              <span className="text-faint">/{data.counts.upcoming}</span>
+            </>
+          }
           hint="rest are schedule-only"
         />
       </div>
 
-      {/* Coverage is thin enough that stating it in the UI is honest rather than
-          apologetic — a low score means "no corroboration", not "unwanted". */}
-      <p className="mb-6 rounded-lg border border-border bg-panel px-4 py-3 text-xs text-muted">
-        <strong className="font-semibold text-ink">Reading the scores:</strong> only{' '}
-        {withDemand} of {data.counts.upcoming} upcoming titles carry a real demand signal, and no
-        upcoming TV does — the upstream popularity ranking excludes unreleased shows. Titles
-        without one show “—” instead of a score, because a capped number would invite ranking on
-        noise.
+      {/* Coverage is thin enough that stating it plainly is honest rather than
+          apologetic — a dash means "no corroboration", not "unwanted". */}
+      <p className="mb-8 border-l-2 border-onair py-1 pl-3 text-xs leading-relaxed text-muted">
+        <strong className="font-semibold text-ink">Reading the scores:</strong> only {withDemand} of{' '}
+        {data.counts.upcoming} upcoming titles carry a real demand signal, and no upcoming TV does —
+        the upstream popularity ranking excludes unreleased shows. Titles without one show{' '}
+        <span className="figure text-ink">—</span> rather than a score, because a capped number
+        would invite ranking on noise.
       </p>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-        <div className="flex min-w-0 flex-col gap-6">
+      <div className="grid gap-9 lg:grid-cols-[1fr_310px]">
+        <div className="flex min-w-0 flex-col gap-9">
           <Alerts alerts={data.alerts} />
           <Schedule titles={data.titles} horizonDays={data.horizonDays} />
         </div>
-        <aside className="flex flex-col gap-6">
+        <aside className="flex flex-col gap-9">
           <Trending titles={data.trending} />
           <Changes changes={data.changes} />
         </aside>

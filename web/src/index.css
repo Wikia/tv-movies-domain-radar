@@ -1,35 +1,47 @@
 @import 'tailwindcss';
 
-/* Theme tokens. Light is the base; dark is redefined under the media query so
-   the page follows the viewer's OS setting with no toggle to maintain. */
+/* Shared identity with out/dashboard.artifact.html — a broadcast transmission
+   log, deliberately not the gaming radar's rounded-card dashboard: graphite
+   ground, one on-air red spent only where attention is owed, condensed
+   uppercase headers over tabular mono, square edges and hairline rules.
+   Keep these tokens in sync with the CSS in src/artifact.ts. */
 @theme {
-  --color-surface: oklch(99% 0.003 250);
-  --color-panel: oklch(100% 0 0);
-  --color-border: oklch(91% 0.006 250);
-  --color-ink: oklch(23% 0.02 260);
-  --color-muted: oklch(53% 0.02 260);
-  --color-accent: oklch(58% 0.19 275);
+  --color-ground: #f3f2f0;
+  --color-surface: #ffffff;
+  --color-rule: #dad7d2;
+  --color-rule-soft: #e6e3df;
+  --color-ink: #16181a;
+  --color-muted: #5f6367;
+  --color-faint: #8b9095;
 
-  /* Signal colors, used for alert reasons and demand tiers. */
-  --color-hot: oklch(62% 0.2 25);
-  --color-warm: oklch(72% 0.16 65);
-  --color-cool: oklch(63% 0.13 220);
-  --color-calm: oklch(66% 0.14 155);
+  /* Semantic, not decorative: on-air marks what needs attention, signal marks
+     corroborated-but-not-urgent, ok marks additions. */
+  --color-onair: #c42a1b;
+  --color-signal: #2c7f92;
+  --color-ok: #3e7a56;
+
+  --font-display: 'Helvetica Neue Condensed', 'Arial Narrow', ui-sans-serif, system-ui,
+    sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Square by default — the rounded card is the thing we're moving away from. */
+  --radius-none: 0px;
 }
 
 @media (prefers-color-scheme: dark) {
   @theme {
-    --color-surface: oklch(17% 0.012 265);
-    --color-panel: oklch(21% 0.014 265);
-    --color-border: oklch(30% 0.016 265);
-    --color-ink: oklch(95% 0.005 250);
-    --color-muted: oklch(69% 0.02 258);
-    --color-accent: oklch(72% 0.16 275);
+    --color-ground: #0f1113;
+    --color-surface: #151719;
+    --color-rule: #2a2e32;
+    --color-rule-soft: #212528;
+    --color-ink: #e8eaec;
+    --color-muted: #9aa0a6;
+    --color-faint: #6b7075;
 
-    --color-hot: oklch(70% 0.18 25);
-    --color-warm: oklch(78% 0.14 70);
-    --color-cool: oklch(72% 0.12 220);
-    --color-calm: oklch(74% 0.13 155);
+    --color-onair: #e8402f;
+    --color-signal: #48a9be;
+    --color-ok: #5ea37b;
   }
 }
 
@@ -38,7 +50,22 @@ html {
 }
 
 body {
-  background-color: var(--color-surface);
+  background-color: var(--color-ground);
   color: var(--color-ink);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Reusable type roles, so components don't restate the same six utilities. */
+@utility eyebrow {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+@utility figure {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
