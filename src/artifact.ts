@@ -166,49 +166,68 @@ button.chip[aria-pressed="true"]{border-color:var(--signal);background:var(--sig
 button.chip:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
 [hidden]{display:none !important}
 
-/* --- poster grid ------------------------------------------------------- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:20px 16px;padding-top:14px}
-.card{display:flex;flex-direction:column;gap:9px;text-decoration:none}
-.art{
-  position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
-  background:var(--raise);border:1px solid var(--line);box-shadow:var(--shadow);
+/* --- schedule rows -----------------------------------------------------
+   One column template shared by the header and every row — the only way the
+   two stay aligned. Genres and countdown drop out on narrow screens; the
+   signal columns never do, since they are the reason to look. */
+.rowhead,.row{
+  display:grid;align-items:center;column-gap:12px;
+  grid-template-columns:64px 28px 1fr 40px 44px 44px;
 }
-.art img{width:100%;height:100%;object-fit:cover;display:block}
-.noart{display:flex;align-items:center;justify-content:center}
-.noart span{font-size:26px;font-weight:600;color:var(--ink-3);letter-spacing:.04em}
-.card .t{font-size:13.5px;font-weight:550;line-height:1.3;text-wrap:balance}
-.card:hover .t,.card:focus-visible .t{color:var(--signal-ink)}
-.card .d{font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
-.card .score{display:inline;width:auto;text-align:left;margin-left:2px}
-.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:1px}
-.tag{font-size:10px;padding:2px 6px;border-radius:20px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap}
+@media(min-width:640px){
+  .rowhead,.row{grid-template-columns:64px 28px 1fr 40px 44px 44px 84px}
+}
+@media(min-width:1024px){
+  .rowhead,.row{grid-template-columns:64px 28px 1fr 40px 150px 44px 44px 84px}
+}
+@media(max-width:1023px){.cg{display:none}}
+@media(max-width:639px){.co{display:none}}
+
+.rowhead{
+  position:sticky;top:0;z-index:20;background:var(--ground);
+  border-bottom:1px solid var(--line);padding:6px 0;
+  font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);
+}
+.row{
+  padding:6px 0;border-bottom:1px solid var(--line-soft);text-decoration:none;
+}
+.row:hover{background:var(--raise)}
+.r{text-align:right}
+.when{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.art.thumb{width:28px;border-radius:3px;box-shadow:none}
+.art.thumb span{font-size:8px}
+.row .t{min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row:hover .t{color:var(--signal-ink)}
+.row .k{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
+.row .g{font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .o{font-family:var(--mono);font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.score{font-family:var(--mono);font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.score.hi{color:var(--signal-ink);font-weight:600}
+.trend{font-family:var(--mono);font-size:12px;color:var(--live);font-variant-numeric:tabular-nums}
+.none{font-family:var(--mono);font-size:12px;color:var(--ink-3);opacity:.6}
+.tags{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
+.tag{font-size:10px;padding:1px 6px;border-radius:20px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap}
 .tag.live{color:var(--live);border-color:var(--live);background:var(--live-bg)}
 .tag.warn{color:var(--signal-ink);border-color:var(--signal);background:var(--signal-bg)}
 .tag.up{color:var(--up);border-color:var(--up)}
 .moved{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
 .moved s{opacity:.7}
 
-/* --- schedule rows ----------------------------------------------------- */
+/* poster tile, still used small in rows and the trending list */
+.art{
+  position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
+  background:var(--raise);border:1px solid var(--line);
+}
+.art img{width:100%;height:100%;object-fit:cover;display:block}
+.noart{display:flex;align-items:center;justify-content:center}
+.noart span{font-size:26px;font-weight:600;color:var(--ink-3);letter-spacing:.04em}
+
 .month{
-  display:flex;align-items:baseline;gap:10px;margin:26px 0 10px;
+  display:flex;align-items:baseline;gap:10px;margin:16px 0 0;
   padding-bottom:6px;border-bottom:1px solid var(--line);
 }
-.month b{font-size:13px;font-weight:650;letter-spacing:.01em}
+.month b{font-size:13px;font-weight:650}
 .month span{font-size:12px;color:var(--ink-3)}
-.rows{display:flex;flex-direction:column}
-.row{display:flex;align-items:center;gap:14px;padding:8px 0;border-bottom:1px solid var(--line-soft);text-decoration:none}
-.row:hover{background:var(--raise)}
-.row .art{width:38px;flex:0 0 38px;border-radius:5px;box-shadow:none}
-.row .noart span{font-size:12px}
-.row .when{font-family:var(--mono);font-size:12.5px;color:var(--ink-2);width:62px;flex:0 0 62px;font-variant-numeric:tabular-nums}
-.row .t{flex:1;min-width:0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row:hover .t{color:var(--signal-ink)}
-.row .g{font-size:12px;color:var(--ink-3);width:180px;flex:0 0 180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.row .k{font-size:10.5px;color:var(--ink-3);width:34px;flex:0 0 34px;text-transform:uppercase;letter-spacing:.05em}
-.row .o{font-size:12px;color:var(--ink-3);width:92px;flex:0 0 92px;text-align:right;font-variant-numeric:tabular-nums}
-.score{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;width:30px;flex:0 0 30px;text-align:right;color:var(--ink-3)}
-.score.hi{color:var(--signal-ink);font-weight:600}
-@media(max-width:720px){.row .g,.row .o{display:none}}
 
 /* --- side lists -------------------------------------------------------- */
 .cols{display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
@@ -245,7 +264,12 @@ function scoreCell(title: Title): string {
 
 /** The schedule is the page's single list of titles — there is no separate
  * alerts section duplicating the same rows. Alerted titles are tagged in place
- * and reachable through the Alerts filter. */
+ * and reachable through the Alerts filter.
+ *
+ * Laid out as columns rather than cards: the signal columns (score, trend) are
+ * the reason to look, and they only read as a set when they line up. Empty
+ * cells render an explicit dash instead of collapsing, so a missing score reads
+ * as "no evidence" rather than as a layout bug. */
 function renderSchedule(
   titles: Title[],
   horizonDays: number,
@@ -269,9 +293,15 @@ function renderSchedule(
     months.set(key, [...(months.get(key) ?? []), title])
   }
 
-  return [...months.entries()]
+  const header = `<div class="rowhead">
+    <span>Date</span><span></span><span>Title</span><span>Type</span>
+    <span class="cg">Genres</span>
+    <span class="r">Score</span><span class="r">Trend</span><span class="co r">Out</span>
+  </div>`
+
+  const body = [...months.entries()]
     .map(([month, group]) => {
-      const cards = group
+      const rows = group
         .map((t) => {
           const alert = reasons.get(t.id)
           const tags = (alert?.reasons ?? [])
@@ -281,26 +311,34 @@ function renderSchedule(
               return `<span class="tag ${cls}">${esc(REASON_LABEL[reason])}</span>`
             })
             .join('')
-          const moved =
-            alert?.change?.kind === 'date-changed'
-              ? `<div class="moved"><s>${esc(fmtDate(alert.change.from ?? null))}</s> → ${esc(fmtDate(alert.change.to ?? null))}</div>`
-              : ''
-          return `<a class="card" href="${esc(t.url)}" target="_blank" rel="noreferrer"
+          const score = hasDemand(t)
+            ? `<span class="r score${t.score >= 70 ? ' hi' : ''}">${t.score.toFixed(0)}</span>`
+            : `<span class="r none" title="No demand signal — scheduled only">—</span>`
+          const trend =
+            t.trendingRank != null
+              ? `<span class="r trend">#${t.trendingRank}</span>`
+              : `<span class="r none" title="Not in the current trending list">—</span>`
+
+          return `<a class="row" href="${esc(t.url)}" target="_blank" rel="noreferrer"
               data-type="${t.type}" data-alert="${alert ? 1 : 0}" data-demand="${hasDemand(t) ? 1 : 0}">
-            ${poster(t, art.get(t.id) ?? null)}
-            <div class="t">${esc(t.title)}</div>
-            <div class="d">${esc(fmtDate(t.releaseDate))} · ${esc(countdown(t.daysOut))} ${scoreCell(t)}</div>
-            ${moved}
-            ${tags ? `<div class="tags">${tags}</div>` : ''}
+            <span class="when">${esc(fmtDate(t.releaseDate))}</span>
+            ${poster(t, art.get(t.id) ?? null, 'thumb')}
+            <span class="t">${esc(t.title)}${tags ? `<span class="tags">${tags}</span>` : ''}</span>
+            <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
+            <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
+            ${score}${trend}
+            <span class="co r o">${esc(countdown(t.daysOut))}</span>
           </a>`
         })
         .join('')
       return `<div class="mgroup" data-count="${group.length}">
         <div class="month"><b>${esc(month === 'unknown' ? 'Undated' : fmtMonth(month))}</b>
         <span class="mcount">${group.length} title${group.length === 1 ? '' : 's'}</span></div>
-        <div class="grid">${cards}</div></div>`
+        ${rows}</div>`
     })
     .join('')
+
+  return header + body
 }
 
 /** Filter chips. The static page has no framework, so this is a few lines of
