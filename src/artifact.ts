@@ -29,6 +29,13 @@ import type { Alert, AlertReason, Change, RadarOutput, Title } from './types.js'
 /** Keep the published page comfortably inside the 16 MB artifact cap. */
 const INLINE_BUDGET = 7_000_000
 
+/** The row class is referenced by BOTH the renderer and the filter script.
+ * They previously drifted apart — the renderer moved from cards to rows while
+ * the script kept querying `.card`, which matched nothing, so the script hid
+ * every month group and blanked the whole page. One constant, used by both,
+ * plus the assertion in build(), makes that failure impossible to repeat. */
+const ROW_CLASS = 'row'
+
 const REASON_LABEL: Record<AlertReason, string> = {
   'trending-and-imminent': 'trending · landing soon',
   'high-score': 'high demand',
@@ -319,7 +326,7 @@ function renderSchedule(
               ? `<span class="r trend">#${t.trendingRank}</span>`
               : `<span class="r none" title="Not in the current trending list">—</span>`
 
-          return `<a class="row" href="${esc(t.url)}" target="_blank" rel="noreferrer"
+          return `<a class="${ROW_CLASS}" href="${esc(t.url)}" target="_blank" rel="noreferrer"
               data-type="${t.type}" data-alert="${alert ? 1 : 0}" data-demand="${hasDemand(t) ? 1 : 0}">
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
             ${poster(t, art.get(t.id) ?? null, 'thumb')}
@@ -348,10 +355,14 @@ const FILTER_SCRIPT = `
   var root=document.getElementById('sched');
   if(!root)return;
   var chips=root.querySelectorAll('[data-filter]');
-  var cards=root.querySelectorAll('.card');
+  var items=root.querySelectorAll('.${ROW_CLASS}');
   var groups=root.querySelectorAll('.mgroup');
+  // Never let a selector mismatch blank the page: if the rows aren't found,
+  // leave the server-rendered markup exactly as it is. The page must be
+  // readable with no JS at all — filtering is an enhancement.
+  if(!items.length)return;
   function apply(f){
-    cards.forEach(function(c){
+    items.forEach(function(c){
       var ok = f==='all'
         || (f==='alerts' && c.dataset.alert==='1')
         || (f==='demand' && c.dataset.demand==='1')
@@ -359,7 +370,7 @@ const FILTER_SCRIPT = `
       c.hidden = !ok;
     });
     groups.forEach(function(g){
-      var shown=g.querySelectorAll('.card:not([hidden])').length;
+      var shown=g.querySelectorAll('.${ROW_CLASS}:not([hidden])').length;
       g.hidden = shown===0;
       var n=g.querySelector('.mcount');
       if(n) n.textContent = shown + (shown===1?' title':' titles');
@@ -497,6 +508,19 @@ export async function build(data: RadarOutput, outDir = path.join(ROOT, 'out')):
   const art = await collectArt(data)
   const body = renderBody(data, art)
   const style = `<style>${CSS}</style>`
+
+  // Fail loudly rather than shipping a page that renders blank. The filter
+  // script hides any month group containing no visible rows, so if the rows
+  // it queries don't exist the whole schedule disappears — and a silently
+  // empty page looks identical to "the pipeline found nothing".
+  const rowCount = (body.match(new RegExp(`class="${ROW_CLASS}"`, 'g')) ?? []).length
+  const expected = data.titles.filter((t) => t.daysOut != null && t.daysOut >= 0).length
+  if (expected > 0 && rowCount === 0) {
+    throw new Error(
+      `artifact: rendered 0 .${ROW_CLASS} elements for ${expected} upcoming titles — ` +
+        `the filter script would blank the page`,
+    )
+  }
 
   const script = `<script>${FILTER_SCRIPT}</script>`
 
