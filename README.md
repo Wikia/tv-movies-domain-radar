@@ -1,0 +1,131 @@
+# tv-movies-domain-radar
+
+A release radar for the Fandom **TV & Movies** domain team, so nothing worth
+supporting ships without us noticing.
+
+It does two jobs:
+
+1. **Schedule** — the full forward calendar of upcoming films and shows.
+2. **Traction** — a daily read on what's gaining attention right now.
+
+```
+neutron-api ─▶ fetch (coming-soon + trending + popularity)
+            ─▶ score (weighted, confidence-capped)
+            ─▶ diff vs yesterday's snapshot
+            ─▶ out/radar.json ─▶ dashboard + Slack
+```
+
+## Quick start
+
+```bash
+npm install
+npm run radar                          # full run, writes out/radar.json
+npm run radar -- --horizon 60 --top 15 # narrower window, longer printout
+npm run radar -- --today 2026-08-11    # pin the date for a reproducible run
+npm run radar -- --no-trending         # schedule only
+```
+
+No API keys, no `.env`, no VPN. The pipeline has **zero runtime dependencies** —
+Node 20's built-in `fetch` is all it uses.
+
+## Where the data comes from
+
+Everything comes from **`neutron-api`**, the backend-for-frontend behind
+metacritic.com and tvguide.com, reached through Fastly at
+`https://backend.metacritic.com`. Its content endpoints are public — no key, no
+auth header. Override the host with `NEUTRON_API_BASE` for stage/dev.
+
+| Purpose | Endpoint |
+|---|---|
+| Schedule | `/finder/metacritic/web?releaseType=coming-soon&mcoTypeId={1 TV, 2 film}` |
+| Traction | `/recommendations/metacritic/trending/{movie,show}` (JustWatch-derived, 15/type, 1h cache) |
+| Demand | `/finder/metacritic/web?sortBy=-popularityCount&releaseDateMin=…&releaseYearMax=…` |
+
+### API quirks worth knowing
+
+All of these were verified against the live API, not just read in the source:
+
+- **`sortBy` is silently ignored when `releaseType=coming-soon`.** The server
+  overwrites it with `sortBy=releaseDate` and forces the window to now → +3
+  years. `releaseYearMin`/`Max` are overwritten too. Sort and narrow locally.
+- **Getting a demand ranking requires avoiding `coming-soon`.** Passing
+  `releaseDateMin` + an explicit `releaseYearMax` gives a forward window without
+  triggering the override, so `-popularityCount` survives.
+- **`limit` above 50 returns a 400.**
+- **Fastly 403s non-browser user agents** — the client sends a browser `User-Agent`.
+- **Paging can repeat a title**; results are deduped by catalog id.
+- **CORS is locked to `*.metacritic.com` / `*.tvguide.com`**, so a browser app
+  can never call this API directly. The dashboard reads `out/radar.json` instead.
+
+## Scoring
+
+| Signal | Weight | Confidence | Notes |
+|---|:--:|:--:|---|
+| `fandomSignal` | 0.40 | 1.0 | **Reserved, not yet wired** — first-party Fandom trending. |
+| `popularityRank` | 0.25 | 1.0 | Metacritic popularity among future titles. |
+| `trendingRank` | 0.20 | 1.0 | Current engagement, JustWatch-derived. |
+| `imminence` | 0.10 | 0.4 | How soon it lands. A date, *not* demand. |
+| `criticScore` | 0.05 | 0.5 | Rarely present pre-release. |
+
+Weights re-normalize over whichever signals a title actually has, so missing data
+never counts as zero.
+
+**The confidence cap is what makes the ranking honest.** A title's score is
+capped by the confidence of its best signal. Demand data is sparse — only ~32 of
+~220 upcoming titles carry a popularity rank, and **no upcoming show does** (the
+popularity sort forces a `reviewCount >= 7` filter upstream that nothing
+unreleased clears). Without the cap, a title with no demand signal scored ~99
+purely because it releases tomorrow, and 164 of 220 titles "qualified" for an
+alert. With it, uncorroborated titles cap at 40 and sit in the schedule where
+they belong.
+
+> **Known limitation:** demand coverage is thin, and TV has none at all. The
+> first-party Fandom signal is the intended fix — it carries the heaviest weight
+> and slots in without touching anything else. Until then, treat the ranking as
+> "movies with corroboration, then everything else chronologically."
+
+## Alerts
+
+A title is worth a ping if **any** rule fires. Multiple reasons collapse into one
+alert, so a title never appears twice.
+
+| Rule | Trigger |
+|---|---|
+| `trending-and-imminent` | In the trending list **and** landing within 30 days. |
+| `high-score` | Computed score ≥ 70. |
+| `newly-added` | Appeared on the calendar since the last run. |
+| `date-changed` | Release date moved (within 180 days). |
+
+`newly-added` / `date-changed` come from diffing against the previous snapshot —
+a signal Metacritic itself doesn't expose. The first run establishes a baseline
+and deliberately raises no change alerts, so it can't post hundreds of lines of
+noise. `removed` is recorded but never alerts: it usually just means the title
+released.
+
+## Outputs
+
+- **`out/radar.json`** — the single artifact. Contains `titles` (chronological),
+  `trending`, `changes`, `alerts`, and headline `counts`. Both the dashboard and
+  the Slack notifier read this file and nothing else, so they can't drift apart.
+- **`data/snapshots/latest.json`** + a dated copy — the diff baseline. Git-ignored.
+
+## Layout
+
+```
+src/
+├── index.ts            # entrypoint: orchestrate, report, write
+├── config.ts           # weights, confidence, thresholds, API constants
+├── types.ts            # data model
+├── scoring.ts          # merge, normalize, weighted score + confidence cap
+├── snapshot.ts         # save/load/diff — the "don't miss anything" mechanism
+├── alerts.ts           # alert rules
+└── sources/neutron.ts  # the only network dependency
+```
+
+## Status
+
+- [x] Pipeline: fetch → score → diff → `out/radar.json`
+- [ ] Dashboard (React + Tailwind, reads `out/radar.json`)
+- [ ] Slack notifier (needs a channel + incoming webhook)
+- [ ] First-party Fandom signal (deferred — availability unconfirmed)
+- [ ] Scheduled daily run (manual for now)

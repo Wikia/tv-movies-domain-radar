@@ -1,0 +1,10 @@
+node_modules/
+out/
+.env
+.DS_Store
+*.log
+
+# Daily snapshots are local state used for diffing (see src/snapshot.ts).
+# Keep the directory, ignore its contents.
+data/snapshots/*
+!data/snapshots/.gitkeep

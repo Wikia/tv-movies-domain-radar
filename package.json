@@ -1,0 +1,19 @@
+{
+  "name": "tv-movies-domain-radar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Upcoming TV & film release radar for the Fandom TV/Movies domain team.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "radar": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
