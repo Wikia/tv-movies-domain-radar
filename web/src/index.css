@@ -1,0 +1,44 @@
+@import 'tailwindcss';
+
+/* Theme tokens. Light is the base; dark is redefined under the media query so
+   the page follows the viewer's OS setting with no toggle to maintain. */
+@theme {
+  --color-surface: oklch(99% 0.003 250);
+  --color-panel: oklch(100% 0 0);
+  --color-border: oklch(91% 0.006 250);
+  --color-ink: oklch(23% 0.02 260);
+  --color-muted: oklch(53% 0.02 260);
+  --color-accent: oklch(58% 0.19 275);
+
+  /* Signal colors, used for alert reasons and demand tiers. */
+  --color-hot: oklch(62% 0.2 25);
+  --color-warm: oklch(72% 0.16 65);
+  --color-cool: oklch(63% 0.13 220);
+  --color-calm: oklch(66% 0.14 155);
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: oklch(17% 0.012 265);
+    --color-panel: oklch(21% 0.014 265);
+    --color-border: oklch(30% 0.016 265);
+    --color-ink: oklch(95% 0.005 250);
+    --color-muted: oklch(69% 0.02 258);
+    --color-accent: oklch(72% 0.16 275);
+
+    --color-hot: oklch(70% 0.18 25);
+    --color-warm: oklch(78% 0.14 70);
+    --color-cool: oklch(72% 0.12 220);
+    --color-calm: oklch(74% 0.13 155);
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}

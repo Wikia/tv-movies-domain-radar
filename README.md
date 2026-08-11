@@ -28,6 +28,49 @@ npm run radar -- --no-trending         # schedule only
 No API keys, no `.env`, no VPN. The pipeline has **zero runtime dependencies** —
 Node 20's built-in `fetch` is all it uses.
 
+### Dashboard
+
+```bash
+npm run web:install   # first time only
+npm run dashboard     # radar + build + serve -> http://localhost:8787
+```
+
+For UI work, run the server and Vite side by side — Vite proxies `/api` to the
+server, so the dashboard hot-reloads against real data:
+
+```bash
+npm run serve      # terminal 1  (port 8787)
+npm run web:dev    # terminal 2  (Vite dev server, proxies /api)
+```
+
+## Architecture
+
+The browser talks **only** to our own server, never to neutron-api:
+
+```
+React (Tailwind)  ──/api/radar──▶  server  ──▶  out/radar.json
+                  ──/api/live/*─▶  (proxy) ──▶  neutron-api
+```
+
+Three reasons it's shaped this way, only one of which is CORS:
+
+- **State.** The diff ("new on the calendar", "date moved") needs yesterday's
+  snapshot. A browser has no yesterday — only a server process can hold that.
+- **Unattended work.** The Slack notifier has to run with no browser open.
+- **CORS.** neutron-api only allows `*.metacritic.com` / `*.tvguide.com` origins.
+  This is a standalone internal tool, so it proxies rather than being hosted
+  there — which also keeps the upstream API surface off the public internet.
+
+The server is `node:http` with **no dependencies**; React/Vite/Tailwind are
+build-time only, so nothing ships at runtime.
+
+| Route | Serves |
+|---|---|
+| `GET /api/radar` | the scored + diffed artifact |
+| `GET /api/live/trending/:type` | live passthrough (`movie` \| `show`) |
+| `GET /health` | liveness probe |
+| `GET /*` | the built React app, with SPA fallback |
+
 ## Where the data comes from
 
 Everything comes from **`neutron-api`**, the backend-for-frontend behind
@@ -112,20 +155,34 @@ released.
 ## Layout
 
 ```
-src/
+src/                    # pipeline + server (zero runtime dependencies)
 ├── index.ts            # entrypoint: orchestrate, report, write
+├── server.ts           # thin proxy + static host for the dashboard
 ├── config.ts           # weights, confidence, thresholds, API constants
 ├── types.ts            # data model
 ├── scoring.ts          # merge, normalize, weighted score + confidence cap
 ├── snapshot.ts         # save/load/diff — the "don't miss anything" mechanism
 ├── alerts.ts           # alert rules
 └── sources/neutron.ts  # the only network dependency
+
+web/                    # React + Tailwind dashboard (build-time deps only)
+└── src/
+    ├── App.tsx         # layout, data fetch, stat tiles
+    ├── types.ts        # mirrors the pipeline model
+    ├── lib/format.ts   # dates, countdowns, reason labels
+    └── components/     # Alerts, Schedule, Sidebar, Primitives
 ```
+
+A note on the UI: titles with no demand signal render **“—” rather than a
+score**. A capped 40 is an absence of evidence, not a measurement, and showing it
+as a number invites ranking on noise.
 
 ## Status
 
 - [x] Pipeline: fetch → score → diff → `out/radar.json`
-- [ ] Dashboard (React + Tailwind, reads `out/radar.json`)
+- [x] Server: `/api/radar`, live proxy, static host
+- [x] Dashboard: React + Tailwind, alerts / schedule / trending / changes
 - [ ] Slack notifier (needs a channel + incoming webhook)
+- [ ] Dockerfile + k8s manifests for GKE
 - [ ] First-party Fandom signal (deferred — availability unconfirmed)
 - [ ] Scheduled daily run (manual for now)
