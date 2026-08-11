@@ -143,14 +143,31 @@ a{color:inherit}
 .tile b{display:block;font-size:24px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
 .tile span{display:block;font-size:11px;color:var(--ink-3);margin-top:1px}
 
-/* --- section headings -------------------------------------------------- */
+/* --- section headings --------------------------------------------------
+   The fixed header height is load-bearing: it's what keeps the schedule and
+   the sidebar starting on the same line despite different content. */
 h2{font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:0}
-.shead{display:flex;align-items:baseline;gap:12px;margin:0 0 16px}
+.shead{
+  display:flex;align-items:center;gap:12px;height:32px;
+  margin:0 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line);
+}
 .shead .aside{font-size:12px;color:var(--ink-3);margin-left:auto}
-section{margin-bottom:44px}
+section{margin-bottom:40px}
+
+/* --- filter chips ------------------------------------------------------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
+button.chip{
+  font:inherit;font-size:11px;cursor:pointer;padding:4px 10px;border-radius:20px;
+  border:1px solid var(--line);background:transparent;color:var(--ink-3);
+  transition:color .15s,border-color .15s,background .15s;
+}
+button.chip:hover{color:var(--ink)}
+button.chip[aria-pressed="true"]{border-color:var(--signal);background:var(--signal-bg);color:var(--signal-ink)}
+button.chip:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+[hidden]{display:none !important}
 
 /* --- poster grid ------------------------------------------------------- */
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:22px 18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:20px 16px;padding-top:14px}
 .card{display:flex;flex-direction:column;gap:9px;text-decoration:none}
 .art{
   position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
@@ -161,7 +178,8 @@ section{margin-bottom:44px}
 .noart span{font-size:26px;font-weight:600;color:var(--ink-3);letter-spacing:.04em}
 .card .t{font-size:13.5px;font-weight:550;line-height:1.3;text-wrap:balance}
 .card:hover .t,.card:focus-visible .t{color:var(--signal-ink)}
-.card .d{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.card .d{font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.card .score{display:inline;width:auto;text-align:left;margin-left:2px}
 .tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:1px}
 .tag{font-size:10px;padding:2px 6px;border-radius:20px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap}
 .tag.live{color:var(--live);border-color:var(--live);background:var(--live-bg)}
@@ -193,8 +211,9 @@ section{margin-bottom:44px}
 @media(max-width:720px){.row .g,.row .o{display:none}}
 
 /* --- side lists -------------------------------------------------------- */
-.cols{display:grid;grid-template-columns:1fr;gap:44px}
+.cols{display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
 @media(min-width:900px){.cols{grid-template-columns:1fr 300px}}
+.side{display:flex;flex-direction:column}
 .mini{display:flex;align-items:center;gap:11px;padding:7px 0;border-bottom:1px solid var(--line-soft);text-decoration:none}
 .mini .art{width:30px;flex:0 0 30px;border-radius:4px;box-shadow:none}
 .mini .n{font-family:var(--mono);font-size:11px;color:var(--ink-3);width:16px;flex:0 0 16px;text-align:right}
@@ -224,39 +243,23 @@ function scoreCell(title: Title): string {
   return `<span class="score${title.score >= 70 ? ' hi' : ''}">${title.score.toFixed(0)}</span>`
 }
 
-function renderBulletin(alerts: Alert[], art: Art): string {
-  if (alerts.length === 0) {
-    return `<p class="empty">Nothing meets an alert rule. On a first run this is expected — the diff baseline was just established.</p>`
-  }
-  const cards = alerts
-    .map((alert) => {
-      const t = alert.title
-      const tags = alert.reasons
-        .map((reason) => {
-          const cls =
-            reason === 'newly-added' ? 'up' : reason === 'date-changed' ? 'warn' : 'live'
-          return `<span class="tag ${cls}">${esc(REASON_LABEL[reason])}</span>`
-        })
-        .join('')
-      const moved =
-        alert.change?.kind === 'date-changed'
-          ? `<div class="moved"><s>${esc(fmtDate(alert.change.from ?? null))}</s> → ${esc(fmtDate(alert.change.to ?? null))}</div>`
-          : ''
-      return `<a class="card" href="${esc(t.url)}" target="_blank" rel="noreferrer">
-        ${poster(t, art.get(t.id) ?? null)}
-        <div class="t">${esc(t.title)}</div>
-        <div class="d">${esc(fmtDate(t.releaseDate))} · ${esc(countdown(t.daysOut))}</div>
-        ${moved}
-        <div class="tags">${tags}</div>
-      </a>`
-    })
-    .join('')
-  return `<div class="grid">${cards}</div>`
-}
+/** The schedule is the page's single list of titles — there is no separate
+ * alerts section duplicating the same rows. Alerted titles are tagged in place
+ * and reachable through the Alerts filter. */
+function renderSchedule(
+  titles: Title[],
+  horizonDays: number,
+  art: Art,
+  alerts: Alert[],
+): string {
+  const reasons = new Map(alerts.map((a) => [a.title.id, a]))
 
-function renderSchedule(titles: Title[], horizonDays: number, art: Art): string {
+  // Alerts are the exception to the horizon: one matters however far out it is.
   const inWindow = titles.filter(
-    (t) => t.daysOut != null && t.daysOut >= 0 && t.daysOut <= horizonDays,
+    (t) =>
+      t.daysOut != null &&
+      t.daysOut >= 0 &&
+      (t.daysOut <= horizonDays || reasons.has(t.id)),
   )
   if (inWindow.length === 0) return `<p class="empty">Nothing scheduled in this window.</p>`
 
@@ -268,25 +271,67 @@ function renderSchedule(titles: Title[], horizonDays: number, art: Art): string 
 
   return [...months.entries()]
     .map(([month, group]) => {
-      const rows = group
-        .map(
-          (t) => `<a class="row" href="${esc(t.url)}" target="_blank" rel="noreferrer">
+      const cards = group
+        .map((t) => {
+          const alert = reasons.get(t.id)
+          const tags = (alert?.reasons ?? [])
+            .map((reason) => {
+              const cls =
+                reason === 'newly-added' ? 'up' : reason === 'date-changed' ? 'warn' : 'live'
+              return `<span class="tag ${cls}">${esc(REASON_LABEL[reason])}</span>`
+            })
+            .join('')
+          const moved =
+            alert?.change?.kind === 'date-changed'
+              ? `<div class="moved"><s>${esc(fmtDate(alert.change.from ?? null))}</s> → ${esc(fmtDate(alert.change.to ?? null))}</div>`
+              : ''
+          return `<a class="card" href="${esc(t.url)}" target="_blank" rel="noreferrer"
+              data-type="${t.type}" data-alert="${alert ? 1 : 0}" data-demand="${hasDemand(t) ? 1 : 0}">
             ${poster(t, art.get(t.id) ?? null)}
-            <span class="when">${esc(fmtDate(t.releaseDate))}</span>
-            <span class="t">${esc(t.title)}</span>
-            <span class="g">${esc(t.genres.slice(0, 3).join(', '))}</span>
-            <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
-            ${scoreCell(t)}
-            <span class="o">${esc(countdown(t.daysOut))}</span>
-          </a>`,
-        )
+            <div class="t">${esc(t.title)}</div>
+            <div class="d">${esc(fmtDate(t.releaseDate))} · ${esc(countdown(t.daysOut))} ${scoreCell(t)}</div>
+            ${moved}
+            ${tags ? `<div class="tags">${tags}</div>` : ''}
+          </a>`
+        })
         .join('')
-      return `<div class="month"><b>${esc(month === 'unknown' ? 'Undated' : fmtMonth(month))}</b>
-        <span>${group.length} title${group.length === 1 ? '' : 's'}</span></div>
-        <div class="rows">${rows}</div>`
+      return `<div class="mgroup" data-count="${group.length}">
+        <div class="month"><b>${esc(month === 'unknown' ? 'Undated' : fmtMonth(month))}</b>
+        <span class="mcount">${group.length} title${group.length === 1 ? '' : 's'}</span></div>
+        <div class="grid">${cards}</div></div>`
     })
     .join('')
 }
+
+/** Filter chips. The static page has no framework, so this is a few lines of
+ * inline JS toggling a data attribute — no dependency, no network. */
+const FILTER_SCRIPT = `
+(function(){
+  var root=document.getElementById('sched');
+  if(!root)return;
+  var chips=root.querySelectorAll('[data-filter]');
+  var cards=root.querySelectorAll('.card');
+  var groups=root.querySelectorAll('.mgroup');
+  function apply(f){
+    cards.forEach(function(c){
+      var ok = f==='all'
+        || (f==='alerts' && c.dataset.alert==='1')
+        || (f==='demand' && c.dataset.demand==='1')
+        || (f===c.dataset.type);
+      c.hidden = !ok;
+    });
+    groups.forEach(function(g){
+      var shown=g.querySelectorAll('.card:not([hidden])').length;
+      g.hidden = shown===0;
+      var n=g.querySelector('.mcount');
+      if(n) n.textContent = shown + (shown===1?' title':' titles');
+    });
+    chips.forEach(function(b){ b.setAttribute('aria-pressed', String(b.dataset.filter===f)); });
+  }
+  chips.forEach(function(b){ b.addEventListener('click',function(){ apply(b.dataset.filter); }); });
+  apply('all');
+})();
+`
 
 function renderTrending(titles: Title[], art: Art): string {
   const top = titles.filter((t) => t.trendingRank != null).slice(0, 12)
@@ -372,18 +417,20 @@ function renderBody(data: RadarOutput, art: Art): string {
     </div>
   </header>
 
-  <section>
-    <div class="shead"><h2>Bulletin</h2><span class="aside">what would have been missed</span></div>
-    ${renderBulletin(data.alerts, art)}
-  </section>
-
   <div class="cols">
-    <section>
+    <section id="sched">
       <div class="shead"><h2>Schedule</h2><span class="aside">next ${data.horizonDays} days</span></div>
-      ${renderSchedule(data.titles, data.horizonDays, art)}
+      <div class="chips">
+        <button class="chip" data-filter="all" aria-pressed="true">All</button>
+        <button class="chip" data-filter="alerts" aria-pressed="false">Alerts</button>
+        <button class="chip" data-filter="movie" aria-pressed="false">Film</button>
+        <button class="chip" data-filter="show" aria-pressed="false">TV</button>
+        <button class="chip" data-filter="demand" aria-pressed="false">Demand signal</button>
+      </div>
+      ${renderSchedule(data.titles, data.horizonDays, art, data.alerts)}
     </section>
 
-    <div>
+    <div class="side">
       <section>
         <div class="shead"><h2>Trending now</h2></div>
         ${renderTrending(data.trending, art)}
@@ -413,8 +460,10 @@ export async function build(data: RadarOutput, outDir = path.join(ROOT, 'out')):
   const body = renderBody(data, art)
   const style = `<style>${CSS}</style>`
 
+  const script = `<script>${FILTER_SCRIPT}</script>`
+
   // Artifact fragment: no <html>/<head>/<body> — the publisher supplies those.
-  await writeFile(path.join(outDir, 'dashboard.artifact.html'), `${style}\n${body}`)
+  await writeFile(path.join(outDir, 'dashboard.artifact.html'), `${style}\n${body}\n${script}`)
 
   const standalone = `<!doctype html>
 <html lang="en">
@@ -427,6 +476,7 @@ ${style}
 </head>
 <body>
 ${body}
+${script}
 </body>
 </html>`
   const file = path.join(outDir, 'dashboard.html')
