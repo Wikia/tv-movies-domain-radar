@@ -50,19 +50,18 @@ export function formatTimestamp(iso: string): string {
 }
 
 export const REASON_LABEL: Record<AlertReason, string> = {
-  'trending-and-imminent': 'trending + landing soon',
+  'trending-and-imminent': 'trending · landing soon',
   'high-score': 'high demand',
   'newly-added': 'new on calendar',
   'date-changed': 'date moved',
 }
 
-/** Semantic, not decorative: on-air marks urgency, signal marks a corroborated
- * shift, ok marks an addition. Colour is doing work here, not styling. */
-export const REASON_STYLE: Record<AlertReason, string> = {
-  'trending-and-imminent': 'border-onair text-onair bg-onair/10',
-  'high-score': 'border-onair text-onair bg-onair/10',
-  'newly-added': 'border-ok text-ok',
-  'date-changed': 'border-signal text-signal bg-signal/10',
+/** Semantic, not decorative: live = urgent, warn = demand, up = an addition. */
+export const REASON_TONE: Record<AlertReason, 'live' | 'warn' | 'up'> = {
+  'trending-and-imminent': 'live',
+  'high-score': 'live',
+  'newly-added': 'up',
+  'date-changed': 'warn',
 }
 
 /** Group titles by release month, preserving chronological order. */

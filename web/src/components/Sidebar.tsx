@@ -1,82 +1,78 @@
 import { formatDate } from '../lib/format'
 import type { Change, Title } from '../types'
-import { Empty, Panel, TypeBadge } from './Primitives'
+import { Poster } from './Poster'
+import { Empty, Section } from './Primitives'
 
 /** What's gaining traction now. Mostly already-released catalog titles — that's
  * the nature of the upstream signal, not a bug. */
 export function Trending({ titles }: { titles: Title[] }) {
-  const top = titles.filter((t) => t.trendingRank != null).slice(0, 15)
+  const top = titles.filter((t) => t.trendingRank != null).slice(0, 12)
 
   return (
-    <Panel title="Trending now" subtitle="hourly upstream">
+    <Section title="Trending now" aside="hourly upstream">
       {top.length === 0 ? (
         <Empty>No trending data in this run.</Empty>
       ) : (
-        <ol className="divide-y divide-rule-soft">
+        <div>
           {top.map((title) => (
-            <li key={`${title.type}-${title.id}`} className="flex items-center gap-3 py-2">
-              <span className="figure w-5 shrink-0 text-right text-[11px] text-faint">
+            <a
+              key={`${title.type}-${title.id}`}
+              href={title.url}
+              target="_blank"
+              rel="noreferrer"
+              className="group flex items-center gap-3 border-b border-line-soft py-1.5"
+            >
+              <span className="figure w-4 shrink-0 text-right text-[11px] text-ink-3">
                 {title.trendingRank}
               </span>
-              <a
-                href={title.url}
-                target="_blank"
-                rel="noreferrer"
-                className="min-w-0 flex-1 truncate border-b border-transparent text-[13px] hover:border-onair hover:text-onair"
-              >
+              <Poster title={title} className="w-[30px] rounded-[4px]" textClass="text-[9px]" />
+              <span className="min-w-0 flex-1 truncate text-[13px] group-hover:text-signal">
                 {title.title}
-              </a>
-              <TypeBadge type={title.type} />
-            </li>
+              </span>
+            </a>
           ))}
-        </ol>
+        </div>
       )}
-    </Panel>
+    </Section>
   )
 }
 
-const CHANGE_LABEL: Record<Change['kind'], string> = {
-  new: 'Added',
-  'date-changed': 'Moved',
-  removed: 'Dropped',
-}
-
-const CHANGE_STYLE: Record<Change['kind'], string> = {
-  new: 'text-ok',
-  'date-changed': 'text-signal',
-  removed: 'text-faint',
+const CHANGE_META: Record<Change['kind'], { label: string; tone: string }> = {
+  new: { label: 'Added', tone: 'text-up' },
+  'date-changed': { label: 'Moved', tone: 'text-signal' },
+  removed: { label: 'Dropped', tone: 'text-ink-3' },
 }
 
 /** Everything that shifted since the previous run, including the quiet ones
  * that don't rise to an alert — the audit trail behind the bulletin. */
 export function Changes({ changes }: { changes: Change[] }) {
   return (
-    <Panel title="Since last run" subtitle={`${changes.length} change${changes.length === 1 ? '' : 's'}`}>
+    <Section title="Since last run" aside={`${changes.length} change${changes.length === 1 ? '' : 's'}`}>
       {changes.length === 0 ? (
         <Empty>
-          No changes — or this was the first run, which sets the baseline without reporting
-          changes.
+          No changes — or this was the first run, which sets the baseline without reporting changes.
         </Empty>
       ) : (
-        <ul className="max-h-80 divide-y divide-rule-soft overflow-y-auto">
-          {changes.map((change) => (
-            <li key={`${change.kind}-${change.id}`} className="py-2">
-              <div className="flex items-center gap-2.5">
-                <span className={`eyebrow w-12 shrink-0 ${CHANGE_STYLE[change.kind]}`}>
-                  {CHANGE_LABEL[change.kind]}
+        <div className="max-h-80 overflow-y-auto">
+          {changes.map((change) => {
+            const meta = CHANGE_META[change.kind]
+            return (
+              <div key={`${change.kind}-${change.id}`} className="border-b border-line-soft py-1.5 text-[13px]">
+                <span className={`mr-1.5 text-[10px] tracking-wide uppercase ${meta.tone}`}>
+                  {meta.label}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[13px]">{change.title}</span>
-                <TypeBadge type={change.type} />
+                {change.title}
+                {change.kind === 'date-changed' && (
+                  <div className="figure text-[11px] text-ink-3">
+                    <s className="opacity-70">{formatDate(change.from ?? null)}</s> →{' '}
+                    {formatDate(change.to ?? null)}
+                  </div>
+                )}
               </div>
-              {change.kind === 'date-changed' && (
-                <div className="figure mt-0.5 pl-14 text-[11px] text-faint">
-                  <s>{formatDate(change.from ?? null)}</s> → {formatDate(change.to ?? null)}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+            )
+          })}
+        </div>
       )}
-    </Panel>
+    </Section>
   )
 }

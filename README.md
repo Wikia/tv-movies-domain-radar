@@ -156,6 +156,30 @@ released.
 - **`out/dashboard.artifact.html`** — the same page as a body-only fragment for
   publishing as a shareable Artifact (the host supplies the skeleton).
 - **`data/snapshots/latest.json`** + a dated copy — the diff baseline. Git-ignored.
+- **`data/posters/<id>.jpg`** — cached poster thumbnails. Git-ignored.
+
+## Poster art
+
+The catalog's images are **full-resolution originals — 2.3 MB on average, one
+sampled at 13 MB**. Never render `title.image` directly; use `title.poster`.
+
+Two ways to get usable art, in order of preference:
+
+1. **Signed resize URLs** — what metacritic.com itself serves, via
+   `/a/img/resize/{hmac}{path}?{params}`, HMAC-SHA1 keyed by the Fastly image
+   secret. Set `FASTLY_IMAGE_SECRET` and the pipeline generates them directly
+   (~15 KB webp, no local cache, works on any host). Uses `node:crypto`, so the
+   zero-dependency rule still holds. **This is the right answer for deployment.**
+2. **Local thumbnail cache** — no secret needed. Downloads once and downscales
+   with `sips` (macOS), into `data/posters/`. Capped at 90 downloads per run, so
+   run the radar a few times to fill it. This is the current default.
+
+Neither available → titles fall back to an initials tile. Art is an enhancement;
+nothing depends on it.
+
+The Artifact fragment **inlines** the art as data URIs, because its CSP blocks
+every external host — a remote `<img>` would silently show nothing. Inlining is
+budgeted (7 MB) to stay well inside the 16 MB artifact cap.
 
 ### Two surfaces, one dataset
 
@@ -166,15 +190,13 @@ released.
 
 ## Visual identity
 
-A **broadcast transmission log**, deliberately *not* the gaming radar's look.
-That page is light-first cool blue-grey with teal/amber on rounded, shadowed
-cards; this one is graphite ground, a single on-air red spent only where
-attention is owed, a muted broadcast cyan for corroborated-not-urgent, condensed
-uppercase headers over tabular mono, square edges, hairline rules, and no
-shadows or cards at all.
+**Poster-led.** Film and TV are visual and the catalog hands us the artwork, so
+the art carries the page and the chrome stays quiet: near-neutral ground, one
+warm signal colour, a rose for anything live, generous poster grid. Deliberately
+unlike the gaming radar's cool blue-grey card dashboard.
 
-Colour is semantic, never decorative: **on-air red** = needs attention,
-**cyan** = a corroborated shift, **green** = an addition.
+Colour is semantic, never decorative: **live** = urgent, **signal** = demand or
+a moved date, **up** = an addition.
 
 The tokens are duplicated in `src/artifact.ts` (CSS) and `web/src/index.css`
 (Tailwind `@theme`) — the static page can't import from the React app. **Change

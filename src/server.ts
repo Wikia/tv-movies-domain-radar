@@ -16,6 +16,7 @@
  * Routes:
  *   GET /api/radar            -> the scored + diffed artifact (out/radar.json)
  *   GET /api/live/trending/:t -> live passthrough to neutron-api (t = movie|show)
+ *   GET /thumbs/<id>.jpg      -> cached poster art (data/posters)
  *   GET /health               -> liveness probe for k8s
  *   GET /*                    -> the built React app (web/dist)
  */
@@ -25,6 +26,7 @@ import http from 'node:http'
 import path from 'node:path'
 
 import { API_BASE, ROOT, USER_AGENT } from './config.js'
+import { POSTER_CACHE_DIR } from './posters.js'
 
 const PORT = Number(process.env.PORT ?? 8787)
 const RADAR_JSON = path.join(ROOT, 'out', 'radar.json')
@@ -96,6 +98,24 @@ async function serveLiveTrending(res: http.ServerResponse, type: string): Promis
   }
 }
 
+/** Cached poster thumbnail. Content-addressed by catalog id, so it can be
+ * cached hard by the browser. */
+async function serveThumb(res: http.ServerResponse, id: string): Promise<void> {
+  const file = path.join(POSTER_CACHE_DIR, `${id}.jpg`)
+  try {
+    await stat(file)
+  } catch {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('no art')
+    return
+  }
+  res.writeHead(200, {
+    'Content-Type': 'image/jpeg',
+    'Cache-Control': 'public, max-age=604800',
+  })
+  createReadStream(file).pipe(res)
+}
+
 /** Static file serving for the built SPA, with traversal protection. */
 async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<void> {
   const requested = path.normalize(path.join(WEB_DIST, urlPath))
@@ -150,6 +170,14 @@ const server = http.createServer((req, res) => {
   const live = route.match(/^\/api\/live\/trending\/([a-z]+)$/)
   if (live?.[1]) {
     void serveLiveTrending(res, live[1])
+    return
+  }
+
+  // Cached poster art. The id pattern is strict, so nothing outside the cache
+  // directory is reachable through this route.
+  const thumb = route.match(/^\/thumbs\/(\d+)\.jpg$/)
+  if (thumb?.[1]) {
+    void serveThumb(res, thumb[1])
     return
   }
 

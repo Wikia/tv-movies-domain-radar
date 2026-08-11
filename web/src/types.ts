@@ -17,7 +17,8 @@ export interface Title {
   network: string | null
   rating: string | null
   description: string | null
-  image: string | null
+  image: string | null // full-resolution original — never render this directly
+  poster: string | null // display-ready art: signed resize URL or /thumbs/<id>.jpg
   criticScore: number | null
   userScore: number | null
   trendingRank: number | null

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { Alerts } from './components/Alerts'
-import { StatTile } from './components/Primitives'
+import { Tile } from './components/Primitives'
 import { Schedule } from './components/Schedule'
 import { Changes, Trending } from './components/Sidebar'
 import { formatTimestamp } from './lib/format'
@@ -49,15 +49,13 @@ export default function App() {
     }
   }, [])
 
-  if (state.status === 'loading') {
-    return <Centered>Loading radar…</Centered>
-  }
+  if (state.status === 'loading') return <Centered>Loading radar…</Centered>
 
   if (state.status === 'error') {
     return (
       <Centered>
-        <p className="font-medium text-onair">{state.message}</p>
-        {state.hint && <p className="mt-2 text-sm text-muted">{state.hint}</p>}
+        <p className="font-medium text-live">{state.message}</p>
+        {state.hint && <p className="mt-2 text-sm text-ink-2">{state.hint}</p>}
       </Centered>
     )
   }
@@ -66,60 +64,62 @@ export default function App() {
   const withDemand = data.titles.filter(hasDemandSignal).length
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <header className="mb-7 border-t-2 border-ink pt-3.5">
-        <p className="eyebrow mb-1.5 text-muted">Fandom · TV &amp; Movies domain</p>
-        <h1 className="font-display text-[clamp(30px,5vw,46px)] leading-[0.96] font-bold tracking-tight uppercase">
-          Release Radar
-        </h1>
-        <p className="figure mt-2.5 text-[11px] text-faint">
-          <span className="eyebrow inline-flex items-center gap-1.5 text-onair">
-            <span className="inline-block size-1.5 rounded-full bg-onair" />
-            {data.counts.alerts} on watch
-          </span>
-          {' · '}generated {formatTimestamp(data.generatedAt)} · source: neutron-api
-        </p>
+    <div className="mx-auto max-w-[1140px] px-7 py-10">
+      <header className="mb-8 flex flex-wrap items-end gap-5">
+        <div>
+          <p className="mb-1.5 text-[13px] text-ink-2">Fandom · TV &amp; Movies domain</p>
+          <h1 className="text-[clamp(28px,4.4vw,40px)] leading-[1.05] font-[650] tracking-tight text-balance">
+            Release Radar
+          </h1>
+          <p className="figure mt-1.5 text-[11.5px] text-ink-3">
+            <span className="inline-flex items-center gap-1.5 font-semibold text-live">
+              <span className="inline-block size-[7px] rounded-full bg-live" />
+              {data.counts.alerts} on watch
+            </span>
+            {' · '}generated {formatTimestamp(data.generatedAt)} · source: neutron-api
+          </p>
+        </div>
+
+        <div className="ml-auto flex flex-wrap gap-2.5">
+          <Tile label="Alerts" value={data.counts.alerts} />
+          <Tile label={`Next ${data.horizonDays} days`} value={data.counts.inHorizon} />
+          <Tile label="Upcoming" value={data.counts.upcoming} />
+          <Tile label="With demand signal" value={withDemand} />
+        </div>
       </header>
 
-      <div className="mb-7 grid grid-cols-2 border-y border-rule lg:grid-cols-4">
-        <StatTile label="Alerts" value={data.counts.alerts} hint="meet an alert rule" />
-        <StatTile
-          label={`Next ${data.horizonDays} days`}
-          value={data.counts.inHorizon}
-          hint="titles landing"
-        />
-        <StatTile label="Upcoming" value={data.counts.upcoming} hint="full calendar" />
-        <StatTile
-          label="Demand signal"
-          value={
-            <>
-              {withDemand}
-              <span className="text-faint">/{data.counts.upcoming}</span>
-            </>
-          }
-          hint="rest are schedule-only"
-        />
-      </div>
+      <div className="flex flex-col gap-11">
+        <Alerts alerts={data.alerts} />
 
-      {/* Coverage is thin enough that stating it plainly is honest rather than
-          apologetic — a dash means "no corroboration", not "unwanted". */}
-      <p className="mb-8 border-l-2 border-onair py-1 pl-3 text-xs leading-relaxed text-muted">
-        <strong className="font-semibold text-ink">Reading the scores:</strong> only {withDemand} of{' '}
-        {data.counts.upcoming} upcoming titles carry a real demand signal, and no upcoming TV does —
-        the upstream popularity ranking excludes unreleased shows. Titles without one show{' '}
-        <span className="figure text-ink">—</span> rather than a score, because a capped number
-        would invite ranking on noise.
-      </p>
-
-      <div className="grid gap-9 lg:grid-cols-[1fr_310px]">
-        <div className="flex min-w-0 flex-col gap-9">
-          <Alerts alerts={data.alerts} />
-          <Schedule titles={data.titles} horizonDays={data.horizonDays} />
+        <div className="grid gap-11 lg:grid-cols-[1fr_300px]">
+          <div className="min-w-0">
+            <Schedule titles={data.titles} horizonDays={data.horizonDays} />
+          </div>
+          <aside className="flex flex-col gap-11">
+            <Trending titles={data.trending} />
+            <Changes changes={data.changes} />
+          </aside>
         </div>
-        <aside className="flex flex-col gap-9">
-          <Trending titles={data.trending} />
-          <Changes changes={data.changes} />
-        </aside>
+
+        {/* Coverage is thin enough that stating it plainly is honest rather
+            than apologetic — a dash means "no corroboration", not "unwanted". */}
+        <section className="border-t border-line pt-5 text-[13px] leading-relaxed text-ink-2">
+          <h2 className="section-label mb-2.5 text-ink">How to read this</h2>
+          <p className="max-w-[74ch] rounded-r-lg border-l-[3px] border-signal bg-signal/10 px-3.5 py-2.5 text-ink">
+            <b>
+              Only {withDemand} of {data.counts.upcoming} upcoming titles carry a real demand
+              signal, and no upcoming TV does
+            </b>{' '}
+            — the upstream popularity ranking excludes unreleased shows. Titles without one show{' '}
+            <span className="figure">—</span> rather than a score: a capped number is an absence of
+            evidence, not a measurement.
+          </p>
+          <p className="mt-2.5 max-w-[74ch]">
+            The bulletin fires on any of: trending and landing within 30 days · score ≥ 70 · newly
+            added to the calendar · release date moved. The last two come from diffing against the
+            previous run — a signal the upstream API doesn't expose.
+          </p>
+        </section>
       </div>
     </div>
   )

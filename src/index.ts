@@ -17,6 +17,7 @@ import { parseArgs } from 'node:util'
 import * as alerts from './alerts.js'
 import * as artifact from './artifact.js'
 import { HORIZON_DAYS, ROOT } from './config.js'
+import * as posters from './posters.js'
 import { applyDates, applyPopularity, applyTrending, byReleaseDate, score } from './scoring.js'
 import * as snapshot from './snapshot.js'
 import { fetchTrending, fetchUpcoming, fetchUpcomingPopularity } from './sources/neutron.js'
@@ -108,6 +109,23 @@ async function main(): Promise<void> {
 
   const fired = alerts.build(ranked, changes)
   console.log(`[alert] ${fired.length} titles meet an alert rule`)
+
+  // Poster art. Cache in importance order so a capped first run fetches what's
+  // actually on screen: alerts, then trending, then whatever lands soonest.
+  const priority = [
+    ...fired.map((alert) => alert.title),
+    ...rankedTrending,
+    ...byReleaseDate(ranked).filter((t) => t.daysOut != null && t.daysOut >= 0),
+  ]
+  const cachedPosters = await posters.cacheThumbnails(priority)
+  for (const title of [...ranked, ...rankedTrending]) {
+    title.poster = posters.posterSrc(title, cachedPosters)
+  }
+  const withArt = ranked.filter((t) => t.poster).length
+  console.log(
+    `[poster] ${withArt}/${ranked.length} upcoming titles have display art ` +
+      `(${process.env.FASTLY_IMAGE_SECRET ? 'signed resize URLs' : 'local thumbnail cache'})`,
+  )
 
   // --- write -------------------------------------------------------------
   const generatedAt = new Date().toISOString()

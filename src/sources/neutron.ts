@@ -101,6 +101,7 @@ function toTitle(item: ApiItem, type: MediaType): Title {
     rating: item.rating ?? null,
     description: item.description ?? null,
     image: imageUrl(item.image),
+    poster: null, // resolved later by posters.ts, which knows what's cached
     criticScore: item.criticScoreSummary?.score ?? null,
     userScore: userScoreValue(item.userScore),
     trendingRank: null,

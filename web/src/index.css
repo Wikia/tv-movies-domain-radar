@@ -1,47 +1,46 @@
 @import 'tailwindcss';
 
-/* Shared identity with out/dashboard.artifact.html — a broadcast transmission
-   log, deliberately not the gaming radar's rounded-card dashboard: graphite
-   ground, one on-air red spent only where attention is owed, condensed
-   uppercase headers over tabular mono, square edges and hairline rules.
-   Keep these tokens in sync with the CSS in src/artifact.ts. */
+/* Poster-led identity, shared with out/dashboard.artifact.html.
+   Film and TV are visual and the catalog gives us the artwork, so the art
+   carries the page and the chrome stays quiet: near-neutral ground, one warm
+   signal colour, a rose for anything live. Keep these values in sync with the
+   CSS in src/artifact.ts — the static page can't import from here. */
 @theme {
-  --color-ground: #f3f2f0;
-  --color-surface: #ffffff;
-  --color-rule: #dad7d2;
-  --color-rule-soft: #e6e3df;
-  --color-ink: #16181a;
-  --color-muted: #5f6367;
-  --color-faint: #8b9095;
+  --color-ground: #fafaf9;
+  --color-raise: #ffffff;
+  --color-line: #e4e2de;
+  --color-line-soft: #efedea;
+  --color-ink: #1a1917;
+  --color-ink-2: #57534e;
+  --color-ink-3: #8c8681;
 
-  /* Semantic, not decorative: on-air marks what needs attention, signal marks
-     corroborated-but-not-urgent, ok marks additions. */
-  --color-onair: #c42a1b;
-  --color-signal: #2c7f92;
-  --color-ok: #3e7a56;
+  /* Semantic: signal = needs attention / demand, live = urgent, up = added. */
+  --color-signal: #b45309;
+  --color-live: #be123c;
+  --color-up: #15803d;
 
-  --font-display: 'Helvetica Neue Condensed', 'Arial Narrow', ui-sans-serif, system-ui,
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     sans-serif;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* Square by default — the rounded card is the thing we're moving away from. */
-  --radius-none: 0px;
+  --shadow-poster: 0 1px 2px rgba(0, 0, 0, 0.07), 0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
   @theme {
-    --color-ground: #0f1113;
-    --color-surface: #151719;
-    --color-rule: #2a2e32;
-    --color-rule-soft: #212528;
-    --color-ink: #e8eaec;
-    --color-muted: #9aa0a6;
-    --color-faint: #6b7075;
+    --color-ground: #0c0c0d;
+    --color-raise: #161617;
+    --color-line: #2a2a2c;
+    --color-line-soft: #202022;
+    --color-ink: #f5f4f2;
+    --color-ink-2: #a8a29e;
+    --color-ink-3: #78716c;
 
-    --color-onair: #e8402f;
-    --color-signal: #48a9be;
-    --color-ok: #5ea37b;
+    --color-signal: #fbbf24;
+    --color-live: #fb7185;
+    --color-up: #4ade80;
+
+    --shadow-poster: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -56,16 +55,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Reusable type roles, so components don't restate the same six utilities. */
-@utility eyebrow {
-  font-family: var(--font-display);
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 10px;
-  font-weight: 600;
-}
-
 @utility figure {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* Section label — used often enough to be worth naming once. */
+@utility section-label {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-2);
 }

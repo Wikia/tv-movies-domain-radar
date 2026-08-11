@@ -20,7 +20,8 @@ export interface Title {
   network: string | null
   rating: string | null
   description: string | null
-  image: string | null
+  image: string | null // full-resolution catalog original (multi-MB — never render this)
+  poster: string | null // display-ready art: signed resize URL or /thumbs/<id>.jpg
   criticScore: number | null
   userScore: number | null
 
