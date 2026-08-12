@@ -5,7 +5,7 @@
  * slipped, is exactly the thing a domain team misses — so we keep yesterday's
  * snapshot and diff against it. This is a signal the upstream API doesn't offer.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { ROOT } from './config.js'
 import type { Change, Title } from './types.js'
@@ -30,23 +30,66 @@ function toEntries(titles: Title[]): SnapshotEntry[] {
   return titles.map(({ id, type, title, releaseDate }) => ({ id, type, title, releaseDate }))
 }
 
-/** Previous snapshot, or null on the first ever run. */
-export async function loadPrevious(): Promise<Snapshot | null> {
+const DATED = /^(\d{4}-\d{2}-\d{2})\.json$/
+
+/** How many dated snapshots to keep. Enough to investigate a bad run or widen
+ * the diff window later; small enough that the directory never sprawls. */
+const KEEP_DAYS = 60
+
+/** The baseline to diff against: the most recent snapshot from a PREVIOUS day.
+ *
+ * Deliberately NOT `latest.json`. That file is rewritten on every run, so
+ * diffing against it meant a second run in the same day compared today against
+ * today and reported nothing — silently erasing the day's changes, which is the
+ * exact opposite of what this tool promises. Anchoring on the previous day makes
+ * repeated runs idempotent: run it five times, still "what changed since
+ * yesterday".
+ *
+ * Returns null when there's no earlier day on record, which the caller treats as
+ * "establish a baseline, report no changes".
+ */
+export async function loadPrevious(today: Date): Promise<Snapshot | null> {
+  const todayKey = today.toISOString().slice(0, 10)
+
+  const earlier = (await readdir(SNAPSHOT_DIR).catch((): string[] => []))
+    .map((file) => DATED.exec(file)?.[1])
+    .filter((date): date is string => !!date && date < todayKey)
+    .sort()
+
+  const mostRecent = earlier.at(-1)
+  if (!mostRecent) return null
+
   try {
-    return JSON.parse(await readFile(LATEST, 'utf8')) as Snapshot
+    return JSON.parse(
+      await readFile(path.join(SNAPSHOT_DIR, `${mostRecent}.json`), 'utf8'),
+    ) as Snapshot
   } catch {
-    return null // first run, or the file was cleared — both mean "no baseline"
+    return null
   }
 }
 
-export async function save(titles: Title[], takenAt: string): Promise<void> {
+/** Persist today's snapshot. `today` dates the file rather than the wall clock,
+ * so `--today` stays reproducible. */
+export async function save(titles: Title[], takenAt: string, today: Date): Promise<void> {
   await mkdir(SNAPSHOT_DIR, { recursive: true })
   const snapshot: Snapshot = { takenAt, entries: toEntries(titles) }
   const body = JSON.stringify(snapshot, null, 2)
 
+  // latest.json is kept purely for inspection — nothing diffs against it.
   await writeFile(LATEST, body)
-  // Keep a dated copy too, so history survives and a bad run can be inspected.
-  await writeFile(path.join(SNAPSHOT_DIR, `${takenAt.slice(0, 10)}.json`), body)
+  await writeFile(path.join(SNAPSHOT_DIR, `${today.toISOString().slice(0, 10)}.json`), body)
+  await prune()
+}
+
+/** Drop dated snapshots beyond KEEP_DAYS, oldest first. */
+async function prune(): Promise<void> {
+  const dated = (await readdir(SNAPSHOT_DIR).catch((): string[] => []))
+    .filter((file) => DATED.test(file))
+    .sort()
+
+  for (const file of dated.slice(0, Math.max(0, dated.length - KEEP_DAYS))) {
+    await rm(path.join(SNAPSHOT_DIR, file), { force: true })
+  }
 }
 
 /** What changed between two snapshots.

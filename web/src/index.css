@@ -1,56 +1,80 @@
 @import 'tailwindcss';
 
-/* Poster-led identity, shared with out/dashboard.artifact.html.
-   Film and TV are visual and the catalog gives us the artwork, so the art
-   carries the page and the chrome stays quiet: near-neutral ground, one warm
-   signal colour, a rose for anything live. Keep these values in sync with the
-   CSS in src/artifact.ts — the static page can't import from here. */
-@theme {
-  --color-ground: #fafaf9;
-  --color-raise: #ffffff;
-  --color-line: #e4e2de;
-  --color-line-soft: #efedea;
-  --color-ink: #1a1917;
-  --color-ink-2: #57534e;
-  --color-ink-3: #8c8681;
+/* Palette as plain custom properties so the theme can change at RUNTIME.
+   Tailwind's @theme values are static, so the tokens below are referenced
+   through `@theme inline` further down — that's what lets a class like
+   `bg-ground` follow the active theme instead of being baked at build time.
 
-  /* Semantic: signal = needs attention / demand, live = urgent, up = added. */
-  --color-signal: #b45309;
-  --color-live: #be123c;
-  --color-up: #15803d;
+   Three viewer states, all covered: light on bare :root, dark for the
+   un-chosen "system" state (guarded so an explicit light choice wins), and
+   dark again for an explicit choice. Keep in sync with the CSS in
+   src/artifact.ts — the static page can't import from here. */
+:root {
+  color-scheme: light;
+  --c-ground: #fafaf9;
+  --c-raise: #ffffff;
+  --c-line: #e4e2de;
+  --c-line-soft: #efedea;
+  --c-ink: #1a1917;
+  --c-ink-2: #57534e;
+  --c-ink-3: #8c8681;
+  --c-accent: #b45309;
+  --c-up: #15803d;
+  --c-moved: #1d4ed8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --c-ground: #0c0c0d;
+    --c-raise: #161617;
+    --c-line: #2a2a2c;
+    --c-line-soft: #202022;
+    --c-ink: #f5f4f2;
+    --c-ink-2: #a8a29e;
+    --c-ink-3: #78716c;
+    --c-accent: #fbbf24;
+    --c-up: #4ade80;
+    --c-moved: #93b4ff;
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --c-ground: #0c0c0d;
+  --c-raise: #161617;
+  --c-line: #2a2a2c;
+  --c-line-soft: #202022;
+  --c-ink: #f5f4f2;
+  --c-ink-2: #a8a29e;
+  --c-ink-3: #78716c;
+  --c-accent: #fbbf24;
+  --c-up: #4ade80;
+  --c-moved: #93b4ff;
+}
+
+@theme inline {
+  --color-ground: var(--c-ground);
+  --color-raise: var(--c-raise);
+  --color-line: var(--c-line);
+  --color-line-soft: var(--c-line-soft);
+  --color-ink: var(--c-ink);
+  --color-ink-2: var(--c-ink-2);
+  --color-ink-3: var(--c-ink-3);
+
+  /* Semantic: accent = interactive/emphasis, up = added, moved = date shift. */
+  --color-accent: var(--c-accent);
+  --color-up: var(--c-up);
+  --color-moved: var(--c-moved);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
-
-  --shadow-poster: 0 1px 2px rgba(0, 0, 0, 0.07), 0 6px 18px rgba(0, 0, 0, 0.06);
-}
-
-@media (prefers-color-scheme: dark) {
-  @theme {
-    --color-ground: #0c0c0d;
-    --color-raise: #161617;
-    --color-line: #2a2a2c;
-    --color-line-soft: #202022;
-    --color-ink: #f5f4f2;
-    --color-ink-2: #a8a29e;
-    --color-ink-3: #78716c;
-
-    --color-signal: #fbbf24;
-    --color-live: #fb7185;
-    --color-up: #4ade80;
-
-    --shadow-poster: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.45);
-  }
-}
-
-html {
-  color-scheme: light dark;
 }
 
 body {
-  background-color: var(--color-ground);
-  color: var(--color-ink);
+  background-color: var(--c-ground);
+  color: var(--c-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
@@ -60,11 +84,10 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* Section label — used often enough to be worth naming once. */
 @utility section-label {
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-ink-2);
+  color: var(--c-ink-2);
 }

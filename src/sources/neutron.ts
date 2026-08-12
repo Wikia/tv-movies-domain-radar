@@ -2,10 +2,13 @@
  *
  * neutron-api is the backend-for-frontend behind metacritic.com and tvguide.com.
  * Its content endpoints are PUBLIC (no key, no auth header), reachable through
- * Fastly at https://backend.metacritic.com. Two endpoints matter here:
+ * Fastly at https://backend.metacritic.com. One endpoint matters here:
  *
  *   /finder/metacritic/web?releaseType=coming-soon   -> the forward schedule
- *   /recommendations/metacritic/trending/{movie,show} -> what's gaining traction
+ *
+ * A trending endpoint and a popularity-sorted variant were both used earlier and
+ * removed: popularity covered 32 of 233 titles and no TV, and trending never
+ * intersected the release calendar at all.
  *
  * Verified quirks (all confirmed against the live API, not just the source):
  *   - `sortBy` is SILENTLY IGNORED when releaseType=coming-soon. The server
@@ -14,8 +17,7 @@
  *   - `releaseYearMin`/`releaseYearMax` are likewise overwritten by coming-soon,
  *     so date-range narrowing must happen client-side.
  *   - No anticipation NUMBER is exposed anywhere: popularityCount orders results
- *     but is never returned, and trending exposes rank only as array order.
- *     That's why scoring.ts computes our own score.
+ *     but is never returned. There is no usable demand measure in this API.
  *   - Fastly 403s non-browser user agents (see USER_AGENT).
  *   - `limit` above 50 is a 400. Hence MAX_PAGE_SIZE.
  */
@@ -95,7 +97,7 @@ function toTitle(item: ApiItem, type: MediaType): Title {
     slug: item.slug,
     url: siteUrl(type, item.slug),
     releaseDate: item.releaseDate ?? null,
-    daysOut: null, // filled in by scoring, which knows the run date
+    daysOut: null, // filled in by schedule.ts, which knows the run date
     genres: (item.genres ?? []).map((g) => g?.name).filter((n): n is string => !!n),
     network: networkName(item.network),
     rating: item.rating ?? null,
@@ -104,12 +106,6 @@ function toTitle(item: ApiItem, type: MediaType): Title {
     poster: null, // resolved later by posters.ts, which knows what's cached
     criticScore: item.criticScoreSummary?.score ?? null,
     userScore: userScoreValue(item.userScore),
-    trendingRank: null,
-    popularityRank: null,
-    fandomSignal: null,
-    signals: {},
-    score: 0,
-    sources: [],
   }
 }
 
@@ -144,68 +140,5 @@ export async function fetchUpcoming(type: MediaType, pageSize = MAX_PAGE_SIZE): 
     offset += page.length
   }
 
-  for (const title of items) title.sources.push('metacritic')
   return items
-}
-
-/** Popularity ranking among FUTURE titles — the one real anticipation signal.
- *
- * The trick: `releaseType=coming-soon` would overwrite our sort, so we don't use
- * it. Passing `releaseDateMin` (today) plus an explicit `releaseYearMax` gets a
- * forward-looking window WITHOUT triggering the override, so `-popularityCount`
- * survives and the results come back demand-ordered rather than date-ordered.
- *
- * Coverage is partial by design of the upstream: `-popularityCount` forces a
- * `reviewCount >= 7` filter, so only ~32 upcoming movies qualify and NO upcoming
- * shows do. Returns id -> rank (1 = most popular); callers treat a missing id as
- * "no demand signal", not "zero demand".
- */
-export async function fetchUpcomingPopularity(
-  type: MediaType,
-  today: Date,
-): Promise<Map<number, number>> {
-  const todayIso = today.toISOString().slice(0, 10)
-  const yearMax = today.getUTCFullYear() + 3
-  const ranks = new Map<number, number>()
-  let offset = 0
-  let total = Infinity
-
-  while (offset < total) {
-    const url =
-      `${API_BASE}/finder/metacritic/web` +
-      `?mcoTypeId=${MCO_TYPE[type]}&sortBy=-popularityCount` +
-      `&releaseDateMin=${todayIso}&releaseYearMax=${yearMax}` +
-      `&limit=${MAX_PAGE_SIZE}&offset=${offset}`
-    const body = await getJson<ListResponse>(url)
-    const page = body.data?.items ?? []
-    total = body.data?.totalResults ?? page.length
-
-    if (page.length === 0) break
-    // Keep the FIRST rank seen; a repeat from page overlap must not renumber it.
-    for (const item of page) {
-      if (!ranks.has(item.id)) ranks.set(item.id, ranks.size + 1)
-    }
-    offset += page.length
-  }
-
-  return ranks
-}
-
-/** The trending list for one media type, in rank order.
- *
- * Derived upstream from JustWatch (top 15/week) and cached an hour, so it's a
- * genuine "what people are watching right now" read. It mixes catalog titles in
- * with upcoming ones — which is exactly what we want for the "gaining traction"
- * half of the radar. */
-export async function fetchTrending(type: MediaType): Promise<Title[]> {
-  const url = `${API_BASE}/recommendations/metacritic/trending/${type}`
-  const body = await getJson<ListResponse>(url)
-  const items = body.data?.items ?? []
-
-  return items.map((item, index) => {
-    const title = toTitle(item, type)
-    title.trendingRank = index + 1 // rank is implicit in array order
-    title.sources.push('trending')
-    return title
-  })
 }

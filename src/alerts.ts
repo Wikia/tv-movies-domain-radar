@@ -1,12 +1,14 @@
 /** Alert rules — which titles are worth interrupting someone for.
  *
- * Three independent triggers (any one fires):
- *   1. trending AND landing soon  — high precision, the "this is about to matter"
- *   2. high computed score        — adaptive, no list to maintain
- *   3. newly added / date moved   — the true "don't miss anything" trigger
+ * Both rules come from diffing against the previous snapshot, which is the one
+ * signal no upstream API exposes. Two earlier rules were removed along with the
+ * scoring they depended on: `high-score` ranked on a demand signal covering
+ * 32 of 233 titles and no TV, and `trending-and-imminent` never fired once,
+ * because the trending feed measures what people watch NOW and so never
+ * intersected the release calendar.
  *
- * A title matching several reasons produces ONE alert carrying all of them, so
- * the Slack post never repeats a title.
+ * A title matching both reasons produces ONE alert carrying both, so a title
+ * never appears twice.
  */
 import { ALERTS } from './config.js'
 import type { Alert, AlertReason, Change, Title } from './types.js'
@@ -16,38 +18,18 @@ export function build(titles: Title[], changes: Change[]): Alert[] {
   const reasons = new Map<number, Set<AlertReason>>()
   const changeById = new Map<number, Change>()
 
-  const add = (id: number, reason: AlertReason) => {
-    const set = reasons.get(id) ?? new Set<AlertReason>()
-    set.add(reason)
-    reasons.set(id, set)
-  }
-
-  for (const title of titles) {
-    const daysOut = title.daysOut
-
-    // Rule 1 — trending and imminent.
-    if (
-      title.trendingRank != null &&
-      daysOut != null &&
-      daysOut >= 0 &&
-      daysOut <= ALERTS.trendingImminentDays
-    ) {
-      add(title.id, 'trending-and-imminent')
-    }
-
-    // Rule 2 — high computed demand.
-    if (title.score >= ALERTS.scoreThreshold) add(title.id, 'high-score')
-  }
-
-  // Rule 3 — schedule churn. Windowed so a date shuffle years out stays quiet,
-  // and 'removed' is skipped: it almost always just means the title released.
   for (const change of changes) {
+    // 'removed' is recorded for the audit trail but never alerts: it almost
+    // always just means the title released and fell out of "coming soon".
     if (change.kind === 'removed') continue
+
     const title = byId.get(change.id)
     if (!title) continue
     if (title.daysOut != null && title.daysOut > ALERTS.changeWindowDays) continue
 
-    add(change.id, change.kind === 'new' ? 'newly-added' : 'date-changed')
+    const set = reasons.get(change.id) ?? new Set<AlertReason>()
+    set.add(change.kind === 'new' ? 'newly-added' : 'date-changed')
+    reasons.set(change.id, set)
     changeById.set(change.id, change)
   }
 
@@ -59,17 +41,12 @@ export function build(titles: Title[], changes: Change[]): Alert[] {
     alerts.push({ title, reasons: [...reasonSet], ...(change ? { change } : {}) })
   }
 
-  // Most urgent first: highest score, then soonest.
-  return alerts.sort(
-    (a, b) =>
-      b.title.score - a.title.score ||
-      (a.title.daysOut ?? Infinity) - (b.title.daysOut ?? Infinity),
-  )
+  // Soonest first: an alert about something landing next week matters more than
+  // one about something a year out.
+  return alerts.sort((a, b) => (a.title.daysOut ?? Infinity) - (b.title.daysOut ?? Infinity))
 }
 
 const REASON_LABEL: Record<AlertReason, string> = {
-  'trending-and-imminent': 'trending + landing soon',
-  'high-score': 'high demand score',
   'newly-added': 'new on the calendar',
   'date-changed': 'release date moved',
 }

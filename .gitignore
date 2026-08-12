@@ -4,7 +4,18 @@ out/
 .DS_Store
 *.log
 
-# Daily snapshots are local state used for diffing (see src/snapshot.ts).
-# Keep the directory, ignore its contents.
+# Editor / IDE
+.idea/
+.vscode/
+
+# Build artifacts
+web/dist/
+*.tsbuildinfo
+
+# Local caches and state. Both are regenerable and must never be committed:
+# snapshots are per-machine diff baselines, and the poster cache is ~11 MB of
+# binary that the pipeline re-downloads on demand.
 data/snapshots/*
 !data/snapshots/.gitkeep
+data/posters/*
+!data/posters/.gitkeep

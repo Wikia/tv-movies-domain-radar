@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { Changes } from './components/Changes'
 import { Tile } from './components/Primitives'
 import { Schedule, type Filter } from './components/Schedule'
-import { Changes, Trending } from './components/Sidebar'
+import { ThemeToggle } from './components/ThemeToggle'
 import { formatTimestamp } from './lib/format'
 import type { AlertReason, RadarOutput } from './types'
-import { hasDemandSignal } from './types'
 
 type State =
   | { status: 'loading' }
@@ -51,8 +51,8 @@ export default function App() {
 
   const data = state.status === 'ready' ? state.data : null
 
-  /** Alert reasons keyed by title id — lets the schedule mark and filter to
-   * alerted titles without a separate section duplicating the same rows. */
+  /** Change reasons keyed by title id — lets the schedule tag and filter to
+   * changed titles without a second section duplicating the same rows. */
   const reasons = useMemo(() => {
     const map = new Map<number, AlertReason[]>()
     for (const alert of data?.alerts ?? []) map.set(alert.title.id, alert.reasons)
@@ -64,14 +64,13 @@ export default function App() {
   if (state.status === 'error') {
     return (
       <Centered>
-        <p className="font-medium text-live">{state.message}</p>
+        <p className="font-medium text-accent">{state.message}</p>
         {state.hint && <p className="mt-2 text-sm text-ink-2">{state.hint}</p>}
       </Centered>
     )
   }
 
   if (!data) return null
-  const withDemand = data.titles.filter(hasDemandSignal).length
 
   /** Clicking an active tile clears it, so a tile is a toggle, not a trap. */
   const toggle = (next: Filter) => setFilter((current) => (current === next ? 'all' : next))
@@ -85,29 +84,20 @@ export default function App() {
             Release Radar
           </h1>
           <p className="figure mt-1.5 text-[11.5px] text-ink-3">
-            <span className="inline-flex items-center gap-1.5 font-semibold text-live">
-              <span className="inline-block size-[7px] rounded-full bg-live" />
-              {data.counts.alerts} on watch
-            </span>
-            {' · '}generated {formatTimestamp(data.generatedAt)} · source: neutron-api
+            generated {formatTimestamp(data.generatedAt)} · source: neutron-api
           </p>
         </div>
 
-        <div className="ml-auto flex flex-wrap gap-2.5">
-          <Tile
-            label="Alerts"
-            value={data.counts.alerts}
-            active={filter === 'alerts'}
-            onClick={() => toggle('alerts')}
-          />
+        <div className="ml-auto flex flex-wrap items-stretch gap-2.5">
           <Tile label={`Next ${data.horizonDays} days`} value={data.counts.inHorizon} />
           <Tile label="Upcoming" value={data.counts.upcoming} />
           <Tile
-            label="With demand signal"
-            value={withDemand}
-            active={filter === 'demand'}
-            onClick={() => toggle('demand')}
+            label="Changed"
+            value={data.counts.alerts}
+            active={filter === 'changed'}
+            onClick={() => toggle('changed')}
           />
+          <ThemeToggle />
         </div>
       </header>
 
@@ -119,30 +109,22 @@ export default function App() {
           onFilter={setFilter}
           reasons={reasons}
         />
-        <aside className="flex flex-col gap-10">
-          <Trending titles={data.trending} />
-          <Changes changes={data.changes} />
-        </aside>
+        <Changes changes={data.changes} />
       </div>
 
-      {/* Coverage is thin enough that stating it plainly is honest rather than
-          apologetic — a dash means "no corroboration", not "unwanted". */}
       <section className="mt-12 border-t border-line pt-5 text-[13px] leading-relaxed text-ink-2">
         <h2 className="section-label mb-2.5 text-ink">How to read this</h2>
-        <p className="max-w-[74ch] rounded-r-lg border-l-[3px] border-signal bg-signal/10 px-3.5 py-2.5 text-ink">
-          <b>
-            Only {withDemand} of {data.counts.upcoming} upcoming titles carry a real demand signal,
-            and no upcoming TV does
-          </b>{' '}
-          — the upstream popularity ranking excludes unreleased shows. Titles without one show{' '}
-          <span className="figure">—</span> rather than a score: a capped number is an absence of
-          evidence, not a measurement.
+        <p className="max-w-[74ch]">
+          The full forward calendar of film and TV releases from the Metacritic catalog, in date
+          order. <b className="text-ink">Changed</b> titles are ones added to the calendar or moved
+          since the previous run — that comes from diffing against our own stored snapshot, and it's
+          a signal the upstream API doesn't expose.
         </p>
-        <p className="mt-2.5 max-w-[74ch]">
-          A title is <b>on watch</b> if any of these fire: trending and landing within 30 days ·
-          score ≥ 70 · newly added to the calendar · release date moved. The last two come from
-          diffing against the previous run — a signal the upstream API doesn't expose. Click the
-          Alerts tile to see just those.
+        <p className="mt-2.5 max-w-[74ch] text-ink-3">
+          <span className="figure">MC</span> is the Metascore where one exists; most titles have
+          none before release, which is normal rather than missing data. This tool deliberately
+          carries no demand or popularity ranking — the available signals covered too few titles,
+          and none of the TV ones, to rank on honestly.
         </p>
       </section>
     </div>

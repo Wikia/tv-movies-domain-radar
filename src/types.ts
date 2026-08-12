@@ -1,8 +1,14 @@
-/** Core data model for a tracked TV/film title. */
+/** Core data model for a tracked TV/film title.
+ *
+ * The radar deliberately carries NO demand or popularity scoring. Those signals
+ * were tried and removed: the popularity query covered 32 of 233 titles and no
+ * TV at all, and the trending feed never once intersected the release calendar.
+ * What's left is what actually works — the calendar itself, and what changed on
+ * it since the last run.
+ */
 
 export type MediaType = 'movie' | 'show'
 
-/** A title on the radar, after fetch + enrichment + scoring. */
 export interface Title {
   // identity
   id: number
@@ -15,25 +21,17 @@ export interface Title {
   releaseDate: string | null // ISO YYYY-MM-DD as returned by the finder
   daysOut: number | null // days from the run date; negative = already out
 
-  // classification / display
+  // descriptive metadata, straight from the catalog payload
   genres: string[]
   network: string | null
   rating: string | null
   description: string | null
-  image: string | null // full-resolution catalog original (multi-MB — never render this)
-  poster: string | null // display-ready art: signed resize URL or /thumbs/<id>.jpg
-  criticScore: number | null
+  criticScore: number | null // Metascore; usually absent before release
   userScore: number | null
 
-  // raw signals
-  trendingRank: number | null // 1..N in the JustWatch-derived trending list
-  popularityRank: number | null // 1..N among future titles by popularity
-  fandomSignal: number | null // RESERVED: first-party signal, not wired yet
-
-  // scoring
-  signals: Record<string, number> // normalized 0..1 per signal
-  score: number // 0..100
-  sources: string[]
+  // art
+  image: string | null // full-resolution catalog original (multi-MB — never render)
+  poster: string | null // display-ready art: signed resize URL or /thumbs/<id>.jpg
 }
 
 /** What changed versus the previous snapshot. */
@@ -48,12 +46,9 @@ export interface Change {
   to?: string | null // current release date (date-changed)
 }
 
-/** Why a title is being surfaced in Slack. */
-export type AlertReason =
-  | 'trending-and-imminent'
-  | 'high-score'
-  | 'newly-added'
-  | 'date-changed'
+/** Why a title is being surfaced. Both reasons come from our own snapshot diff —
+ * no upstream API exposes them. */
+export type AlertReason = 'newly-added' | 'date-changed'
 
 export interface Alert {
   title: Title
@@ -69,11 +64,9 @@ export interface RadarOutput {
   counts: {
     upcoming: number
     inHorizon: number
-    trending: number
     alerts: number
   }
   titles: Title[]
-  trending: Title[]
   changes: Change[]
   alerts: Alert[]
 }

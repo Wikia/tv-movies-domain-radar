@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-/** tv-movies-domain-radar — upcoming TV & film release radar.
+/** tv-movies-domain-radar — upcoming TV & film release calendar.
  *
- * Pulls the full coming-soon calendar and the trending list from neutron-api,
- * scores every title, diffs against yesterday's snapshot, and writes a single
- * JSON artifact that both the dashboard and the Slack notifier read.
+ * Pulls the full coming-soon calendar from neutron-api, diffs it against the
+ * previous run, and writes a single JSON artifact that the dashboard, the
+ * static page and the Slack notifier all read.
+ *
+ * There is deliberately no demand scoring — see types.ts for why.
  *
  * Usage:
  *   npm run radar
  *   npm run radar -- --horizon 60 --top 15
- *   npm run radar -- --today 2026-08-11    # reproducible runs
+ *   npm run radar -- --today 2026-08-12    # reproducible runs
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -18,9 +20,9 @@ import * as alerts from './alerts.js'
 import * as artifact from './artifact.js'
 import { HORIZON_DAYS, ROOT } from './config.js'
 import * as posters from './posters.js'
-import { applyDates, applyPopularity, applyTrending, byReleaseDate, score } from './scoring.js'
+import { applyDates, byReleaseDate } from './schedule.js'
 import * as snapshot from './snapshot.js'
-import { fetchTrending, fetchUpcoming, fetchUpcomingPopularity } from './sources/neutron.js'
+import { fetchUpcoming } from './sources/neutron.js'
 import type { MediaType, RadarOutput, Title } from './types.js'
 
 const OUT_DIR = path.join(ROOT, 'out')
@@ -32,7 +34,6 @@ async function main(): Promise<void> {
       horizon: { type: 'string' },
       top: { type: 'string' },
       today: { type: 'string' },
-      'no-trending': { type: 'boolean' },
     },
   })
 
@@ -44,8 +45,14 @@ async function main(): Promise<void> {
     throw new Error(`--today must be YYYY-MM-DD, got: ${values.today}`)
   }
 
+  // A pinned --today is for reproducing or inspecting a past run, so it must NOT
+  // write to the snapshot history: dated files are keyed by date, and saving
+  // here would overwrite that day's real baseline with today's live calendar,
+  // permanently corrupting every diff that later compares against it.
+  const pinned = Boolean(values.today) && values.today !== new Date().toISOString().slice(0, 10)
+
   console.log('='.repeat(72))
-  console.log(' tv-movies radar :: upcoming releases + what is gaining traction')
+  console.log(' tv-movies radar :: upcoming release calendar')
   console.log('='.repeat(72))
 
   // --- fetch -------------------------------------------------------------
@@ -56,46 +63,12 @@ async function main(): Promise<void> {
     upcoming.push(...titles)
   }
 
-  let trending: Title[] = []
-  if (!values['no-trending']) {
-    for (const type of TYPES) {
-      const titles = await fetchTrending(type)
-      console.log(`[fetch] ${titles.length} trending ${type}s`)
-      trending.push(...titles)
-    }
-  }
-
-  // The one real anticipation signal we can get. Coverage is partial (movies
-  // only, in practice) — see fetchUpcomingPopularity.
-  const popularity = new Map<number, number>()
-  for (const type of TYPES) {
-    const ranks = await fetchUpcomingPopularity(type, today)
-    for (const [id, rank] of ranks) popularity.set(id, rank)
-    console.log(`[fetch] ${ranks.size} upcoming ${type}s carry a popularity rank`)
-  }
-
-  // --- enrich + score ----------------------------------------------------
   applyDates(upcoming, today)
-  applyDates(trending, today)
+  const titles = byReleaseDate(upcoming)
 
-  const matched = applyTrending(upcoming, trending)
-  console.log(`[merge] ${matched} upcoming titles are also trending right now`)
-  applyPopularity(upcoming, popularity)
-
-  const ranked = score(upcoming, trending.length, popularity.size)
-  const rankedTrending = score(trending, trending.length, popularity.size)
-
-  const withDemand = ranked.filter(
-    (t) => t.popularityRank != null || t.trendingRank != null || t.fandomSignal != null,
-  ).length
-  console.log(
-    `[score] ${withDemand}/${ranked.length} titles have a real demand signal; ` +
-      `the rest are capped as schedule-only`,
-  )
-
-  // --- diff against yesterday -------------------------------------------
-  const previous = await snapshot.loadPrevious()
-  const changes = snapshot.diff(previous, ranked)
+  // --- diff against the previous run -------------------------------------
+  const previous = await snapshot.loadPrevious(today)
+  const changes = snapshot.diff(previous, titles)
   if (previous) {
     const added = changes.filter((c) => c.kind === 'new').length
     const moved = changes.filter((c) => c.kind === 'date-changed').length
@@ -107,29 +80,22 @@ async function main(): Promise<void> {
     console.log('[diff] no previous snapshot — baseline established, no change alerts')
   }
 
-  const fired = alerts.build(ranked, changes)
-  console.log(`[alert] ${fired.length} titles meet an alert rule`)
+  const fired = alerts.build(titles, changes)
+  console.log(`[alert] ${fired.length} titles changed inside the alert window`)
 
-  // Poster art. Cache in importance order so a capped first run fetches what's
-  // actually on screen: alerts, then trending, then whatever lands soonest.
-  const priority = [
-    ...fired.map((alert) => alert.title),
-    ...rankedTrending,
-    ...byReleaseDate(ranked).filter((t) => t.daysOut != null && t.daysOut >= 0),
-  ]
+  // Poster art, cached in importance order so a capped run fetches what's on
+  // screen first: alerts, then whatever lands soonest.
+  const priority = [...fired.map((alert) => alert.title), ...titles]
   const cachedPosters = await posters.cacheThumbnails(priority)
-  for (const title of [...ranked, ...rankedTrending]) {
-    title.poster = posters.posterSrc(title, cachedPosters)
-  }
-  const withArt = ranked.filter((t) => t.poster).length
+  for (const title of titles) title.poster = posters.posterSrc(title, cachedPosters)
   console.log(
-    `[poster] ${withArt}/${ranked.length} upcoming titles have display art ` +
+    `[poster] ${titles.filter((t) => t.poster).length}/${titles.length} titles have display art ` +
       `(${process.env.FASTLY_IMAGE_SECRET ? 'signed resize URLs' : 'local thumbnail cache'})`,
   )
 
   // --- write -------------------------------------------------------------
   const generatedAt = new Date().toISOString()
-  const inHorizon = ranked.filter(
+  const inHorizon = titles.filter(
     (t) => t.daysOut != null && t.daysOut >= 0 && t.daysOut <= horizonDays,
   )
 
@@ -137,64 +103,50 @@ async function main(): Promise<void> {
     generatedAt,
     today: today.toISOString().slice(0, 10),
     horizonDays,
-    counts: {
-      upcoming: ranked.length,
-      inHorizon: inHorizon.length,
-      trending: rankedTrending.length,
-      alerts: fired.length,
-    },
-    titles: byReleaseDate(ranked),
-    trending: rankedTrending,
+    counts: { upcoming: titles.length, inHorizon: inHorizon.length, alerts: fired.length },
+    titles,
     changes,
     alerts: fired,
   }
 
   await mkdir(OUT_DIR, { recursive: true })
   await writeFile(path.join(OUT_DIR, 'radar.json'), JSON.stringify(output, null, 2))
-  await snapshot.save(ranked, generatedAt)
-  console.log(`\n[out] wrote ${ranked.length} titles to out/radar.json`)
+  if (pinned) {
+    console.log('\n[snapshot] --today is pinned to a past date — not persisting a snapshot')
+  } else {
+    await snapshot.save(titles, generatedAt, today)
+  }
+  console.log(`[out] wrote ${titles.length} titles to out/radar.json`)
 
   await artifact.build(output)
   console.log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
 
-  report(ranked, inHorizon, fired, top, horizonDays)
+  report(inHorizon, fired, top, horizonDays)
 }
 
 function report(
-  ranked: Title[],
   inHorizon: Title[],
   fired: RadarOutput['alerts'],
   top: number,
   horizonDays: number,
 ): void {
   console.log('\n' + '='.repeat(72))
-  console.log(` TOP ${Math.min(top, ranked.length)} BY DEMAND — all upcoming titles`)
-  console.log('='.repeat(72))
-  for (const [i, t] of ranked.slice(0, top).entries()) {
-    const star = t.trendingRank != null ? ' *' : '  '
-    const when = t.releaseDate ?? '?'
-    const out = t.daysOut != null ? `${t.daysOut >= 0 ? '+' : ''}${t.daysOut}d` : ''
-    console.log(`\n${String(i + 1).padStart(2)}.${star}[${String(t.score).padStart(5)}] ${t.title}`)
-    console.log(`      ${t.type.padEnd(5)} | ${when} ${out.padEnd(7)}| ${t.genres.slice(0, 3).join(', ')}`)
-    if (t.trendingRank != null) console.log(`      trending now at #${t.trendingRank}`)
-  }
-  console.log('\n  * = also in the trending list right now')
-
-  console.log('\n' + '='.repeat(72))
   console.log(` NEXT ${horizonDays} DAYS — ${inHorizon.length} titles landing`)
   console.log('='.repeat(72))
-  for (const t of byReleaseDate(inHorizon).slice(0, top)) {
-    const flag = t.trendingRank != null ? ' *' : '  '
-    console.log(`  ${t.releaseDate}${flag} [${String(t.score).padStart(5)}] ${t.type.padEnd(5)} ${t.title}`)
+  for (const t of inHorizon.slice(0, top)) {
+    const score = t.criticScore != null ? String(t.criticScore).padStart(3) : '  -'
+    console.log(
+      `  ${t.releaseDate}  [${score}] ${t.type === 'movie' ? 'film' : 'tv  '} ${t.title}`,
+    )
   }
 
   if (fired.length === 0) return
   console.log('\n' + '='.repeat(72))
-  console.log(` ALERTS — ${fired.length} titles worth a Slack ping`)
+  console.log(` CHANGED — ${fired.length} titles added or moved since the last run`)
   console.log('='.repeat(72))
   for (const alert of fired.slice(0, top)) {
     const reasons = alert.reasons.map(alerts.describe).join(', ')
-    console.log(`\n▸ [${String(alert.title.score).padStart(5)}] ${alert.title.title} (${alert.title.releaseDate ?? '?'})`)
+    console.log(`\n▸ ${alert.title.title} (${alert.title.releaseDate ?? '?'})`)
     console.log(`    ${reasons}`)
     if (alert.change?.kind === 'date-changed') {
       console.log(`    moved: ${alert.change.from ?? '?'} -> ${alert.change.to ?? '?'}`)

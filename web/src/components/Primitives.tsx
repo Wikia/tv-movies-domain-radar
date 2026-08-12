@@ -1,11 +1,8 @@
 import type { ReactNode } from 'react'
 
-import type { Title } from '../types'
-import { hasDemandSignal } from '../types'
-
 /** Section header. The fixed height is load-bearing: the schedule carries
- * inline controls and the sidebar sections don't, and without a shared header
- * height the two columns start on different lines. */
+ * inline controls and the sidebar doesn't, and without a shared header height
+ * the two columns start on different lines. */
 export function Section({
   title,
   aside,
@@ -29,9 +26,9 @@ export function Section({
   )
 }
 
-/** A stat tile. When `onClick` is given it becomes a filter control — the count
- * and the thing it filters to are the same idea, so clicking the number to see
- * those rows is the obvious gesture. */
+/** A stat tile. With `onClick` it doubles as a filter control — the count and
+ * the thing it counts are the same idea, so clicking the number to see those
+ * rows is the obvious gesture. */
 export function Tile({
   label,
   value,
@@ -45,13 +42,13 @@ export function Tile({
 }) {
   const base = 'min-w-[104px] rounded-[10px] border px-4 py-2.5 text-left transition-colors'
   const tone = active
-    ? 'border-signal bg-signal/10 text-signal'
+    ? 'border-accent bg-accent/10 text-accent'
     : 'border-line bg-raise hover:border-ink-3'
 
   const content = (
     <>
       <div className="figure text-2xl leading-tight font-[650] tracking-tight">{value}</div>
-      <div className={`mt-px text-[11px] ${active ? 'text-signal' : 'text-ink-3'}`}>{label}</div>
+      <div className={`mt-px text-[11px] ${active ? 'text-accent' : 'text-ink-3'}`}>{label}</div>
     </>
   )
 
@@ -70,47 +67,22 @@ export function Tile({
   )
 }
 
-/** A capped score is an absence of evidence, not a measurement — unbacked
- * titles show a dash so nobody ranks on noise. See the README's confidence cap. */
-export function Score({ title }: { title: Title }) {
-  if (!hasDemandSignal(title)) {
-    return (
-      <span
-        className="figure w-[30px] shrink-0 text-right text-xs text-ink-3"
-        title="No demand signal — scheduled only. Score is capped and not meaningful."
-      >
-        —
-      </span>
-    )
-  }
-  return (
-    <span
-      className={`figure w-[30px] shrink-0 text-right text-xs ${
-        title.score >= 70 ? 'font-semibold text-signal' : 'text-ink-3'
-      }`}
-      title="Blended demand score (0–100)"
-    >
-      {title.score.toFixed(0)}
-    </span>
-  )
-}
-
 const TAG_TONE = {
-  live: 'border-live text-live bg-live/10',
-  warn: 'border-signal text-signal bg-signal/10',
   up: 'border-up text-up',
-  plain: 'border-line text-ink-3',
+  moved: 'border-moved text-moved bg-moved/10',
 } as const
 
 export function Tag({
-  tone = 'plain',
+  tone,
   children,
 }: {
-  tone?: keyof typeof TAG_TONE
+  tone: keyof typeof TAG_TONE
   children: ReactNode
 }) {
   return (
-    <span className={`rounded-full border px-1.5 py-0.5 text-[10px] whitespace-nowrap ${TAG_TONE[tone]}`}>
+    <span
+      className={`rounded-full border px-1.5 py-0.5 text-[10px] whitespace-nowrap ${TAG_TONE[tone]}`}
+    >
       {children}
     </span>
   )
