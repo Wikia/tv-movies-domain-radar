@@ -35,7 +35,7 @@ const FILTER_ASIDE: Record<Filter, string> = {
 const COLS =
   'grid grid-cols-[64px_28px_1fr_40px_40px] items-center gap-x-3 ' +
   'sm:grid-cols-[64px_28px_1fr_40px_40px_88px] ' +
-  'lg:grid-cols-[64px_28px_1fr_40px_160px_40px_88px]'
+  'lg:grid-cols-[64px_28px_1fr_40px_128px_40px_88px]'
 
 /** The schedule's scroll box.
  *
@@ -44,10 +44,9 @@ const COLS =
  * scrollbar sat directly on top of it. The gutter reserves the space whether or
  * not the bar is visible, so rows don't shift when it appears.
  *
- * Height is set to sit roughly level with the sidebar (Buzz + the change log)
- * rather than to fill the viewport: Trending on Fandom now runs full width
- * BELOW both columns, so the two need to end at about the same place or the
- * page has a long empty gutter on one side. */
+ * Height is set to sit roughly level with the rail (Buzz, Trending, the change
+ * log) rather than to fill the viewport — if the two columns end far apart the
+ * page has a long empty gutter down one side. */
 const SCROLL = 'max-h-[62rem] overflow-y-auto pr-3 [scrollbar-gutter:stable]'
 
 /** Band -> text colour for the inline score. Written out in full because

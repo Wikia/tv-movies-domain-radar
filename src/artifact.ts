@@ -230,7 +230,7 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   grid-template-columns:64px 28px 1fr 40px 40px;
 }
 @media(min-width:640px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 40px 88px}}
-@media(min-width:1024px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 160px 40px 88px}}
+@media(min-width:1024px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 128px 40px 88px}}
 @media(max-width:1023px){.cg{display:none}}
 @media(max-width:639px){.co{display:none}}
 
@@ -279,25 +279,27 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* --- side ------------------------------------------------------------- */
 .cols{display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
-@media(min-width:900px){.cols{grid-template-columns:1fr 300px}}
+/* 340px, not 300: the rail carries three signal panels now, and at 300 the
+   wiki names and reader counts had nowhere to go. */
+@media(min-width:900px){.cols{grid-template-columns:1fr 340px}}
 .chg{padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .chg .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:7px}
 .chg .lbl.new{color:var(--up)}
 .chg .lbl.mv{color:var(--moved)}
 .chg .lbl.rm{color:var(--ink-3)}
 
-/* --- trending ---------------------------------------------------------- */
-/* Full-width panel: columns as wide as they need to be, so a wiki name and its
-   reader count fit on one line instead of being truncated in a 300px rail. */
-.wgrid{display:grid;grid-template-columns:1fr;gap:0 32px}
-@media(min-width:640px){.wgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(min-width:1024px){.wgrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.lead{font-size:13px;color:var(--ink-2);margin:0 0 14px;max-width:80ch;line-height:1.6}
-.wiki{padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+/* --- signal rows (buzz + trending) ------------------------------------- */
+/* These live in the right rail, so the title gets the size and the supporting
+   figures wrap onto their own lines rather than being cut off by an ellipsis —
+   a truncated wiki name is unreadable, and the numbers are the whole point. */
+.wiki{padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .wiki .wtop{display:flex;align-items:baseline;gap:8px}
-.wiki .wn{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wiki .ws{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--accent);font-variant-numeric:tabular-nums}
-.wiki .wd{font-family:var(--mono);font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wiki .wn{font-size:14.5px;font-weight:600;line-height:1.3;min-width:0;overflow-wrap:anywhere}
+.wiki .ws{margin-left:auto;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.wiki .wd{font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--ink-3);margin-top:2px}
+/* One-line standfirst for a rail panel: enough to say what the list is without
+   eating the space the list needs. */
+.railnote{font-size:12px;line-height:1.5;color:var(--ink-3);margin:0 0 10px}
 /* Level bar. Purely a reading aid for the score already printed beside it —
    it encodes nothing the number doesn't. */
 .bar{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}
@@ -506,7 +508,7 @@ function renderTrending(report: TrendingReport | null): string {
   // version printed "0.83 · level 0.85 · +0.69", which is the raw export's
   // vocabulary and means nothing to a reader — three unlabelled decimals that
   // all look like the same kind of number and aren't.
-  const rows = report.unmapped
+  return report.unmapped
     .map((w) => {
       const heat = Math.round(w.fpScore * 100)
       const now = Math.round(w.trendingScore * 100)
@@ -523,14 +525,11 @@ function renderTrending(report: TrendingReport | null): string {
       return `<div class="wiki">
         <div class="wtop"><span class="wn">${esc(w.name)}</span>${badge}
         <span class="ws">${heat}</span></div>
-        <div class="wd">${esc(w.pageviews14d.toLocaleString('en-US'))} readers in 14 days · ${trendSentence}</div>
+        <div class="wd">${esc(w.pageviews14d.toLocaleString('en-US'))} readers in 14 days<br>${trendSentence}</div>
         <div class="bar"><i style="width:${heat}%"></i></div>
       </div>`
     })
     .join('')
-
-  return `<p class="lead">Fandom wikis our own audience is reading heavily this week that have <b>no upcoming release</b> on the calendar — usually a back-catalogue show or film finding a new audience, which a release calendar can't see. The number is a 0&ndash;100 heat score combining how hot the wiki is with how fast it climbed.</p>
-    <div class="wgrid">${rows}</div>`
 }
 
 function renderChanges(changes: Change[]): string {
@@ -697,22 +696,19 @@ function renderBody(data: RadarOutput, art: Art): string {
       </section>
 
       <section>
+        <div class="shead"><h2>Trending on Fandom</h2><span class="aside">${
+          data.trending ? `${data.trending.unmappedTotal} unattached` : 'no data'
+        }</span></div>
+        <p class="railnote">Wikis our audience is reading heavily that have <b>no upcoming release</b> — where a back-catalogue surge shows up.</p>
+        ${renderTrending(data.trending)}
+      </section>
+
+      <section>
         <div class="shead"><h2>Since last run</h2><span class="aside">${data.changes.length}</span></div>
         ${renderChanges(data.changes)}
       </section>
     </div>
   </div>
-
-  <!-- Full width, below the two columns. In a 300px sidebar each wiki row was
-       one truncated line; given the page width it can breathe and be read. -->
-  <section>
-    <div class="shead"><h2>Trending on Fandom</h2><span class="aside">${
-      data.trending
-        ? `${data.trending.unmappedTotal} wikis with no release attached`
-        : 'no data'
-    }</span></div>
-    ${renderTrending(data.trending)}
-  </section>
 
   <section class="method">
     <h3>How to read this</h3>

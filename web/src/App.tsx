@@ -105,7 +105,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="grid items-start gap-11 lg:grid-cols-[1fr_300px]">
+      <div className="grid items-start gap-11 lg:grid-cols-[1fr_340px]">
         <Schedule
           titles={data.titles}
           horizonDays={data.horizonDays}
@@ -118,14 +118,9 @@ export default function App() {
             and pushed the signal panel below the fold. */}
         <div className="flex flex-col gap-11">
           <Buzz titles={data.titles} coverage={data.buzz} total={data.counts.upcoming} />
+          <Trending report={data.trending} />
           <Changes changes={data.changes} />
         </div>
-      </div>
-
-      {/* Full width, below the two columns. In the 300px rail each wiki was one
-          truncated line; given the page width it can be read. */}
-      <div className="mt-11">
-        <Trending report={data.trending} />
       </div>
 
       <section className="mt-12 border-t border-line pt-5 text-[13px] leading-relaxed text-ink-2">
@@ -156,9 +151,9 @@ export default function App() {
           {data.trending?.week ? ` (week of ${data.trending.week})` : ''}. A{' '}
           <b className="text-ink">wiki hot</b> tag means the title's own wiki is trending;{' '}
           <b className="text-ink">franchise hot</b> means its franchise hub is — which says the
-          franchise is drawing an audience, not this title. The panel below the schedule lists
-          trending wikis with <i>no</i> upcoming release behind them, which is where a
-          back-catalogue surge shows up.
+          franchise is drawing an audience, not this title. The side panel lists trending wikis
+          with <i>no</i> upcoming release behind them, which is where a back-catalogue surge shows
+          up.
         </p>
         <p className="mt-2.5">
           The <b className="text-ink">Buzz</b> column replaced the Metascore: almost nothing has a

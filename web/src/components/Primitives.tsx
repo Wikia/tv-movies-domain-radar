@@ -120,7 +120,7 @@ export function SignalRow({
 }: {
   name: string
   score: string
-  detail: string
+  detail: ReactNode
   percent: number
   badges?: ReactNode
   title?: string
@@ -129,14 +129,19 @@ export function SignalRow({
   tone?: keyof typeof SIGNAL_TONE
 }) {
   const paint = SIGNAL_TONE[tone]
+  // The title gets the size, and the supporting figures wrap onto their own
+  // lines rather than being cut off by an ellipsis — a truncated wiki name is
+  // unreadable, and the numbers under it are the whole point of the row.
   return (
-    <div className="border-b border-line-soft py-2 text-[13px]" title={title}>
+    <div className="border-b border-line-soft py-2.5" title={title}>
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 truncate font-[550]">{name}</span>
+        <span className="min-w-0 text-[14.5px] leading-tight font-semibold [overflow-wrap:anywhere]">
+          {name}
+        </span>
         {badges}
-        <span className={`figure ml-auto text-xs ${paint.text}`}>{score}</span>
+        <span className={`figure ml-auto text-[13px] font-semibold ${paint.text}`}>{score}</span>
       </div>
-      <div className="figure truncate text-[11px] text-ink-3">{detail}</div>
+      <div className="figure mt-0.5 text-[11px] leading-relaxed text-ink-3">{detail}</div>
       <div className="mt-1.5 h-[3px] overflow-hidden rounded-sm bg-line">
         <div
           className={`h-full ${paint.bg}`}
