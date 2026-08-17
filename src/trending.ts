@@ -83,6 +83,9 @@ function better(a: TitleTrend, b: TitleTrend | null): boolean {
  */
 export function attach(titles: Title[], wikis: TrendingWiki[]): TrendingReport {
   const mapped = new Set<string>()
+  // Built once, not once per title: this loop is titles x wikis, and rebuilding
+  // the key list inside it allocated ~12,000 throwaway arrays per run.
+  const searchable = wikis.map((wiki) => ({ wiki, keys: candidates(wiki) }))
 
   for (const title of titles) {
     const titleKey = key(title.title)
@@ -93,8 +96,8 @@ export function attach(titles: Title[], wikis: TrendingWiki[]): TrendingReport {
     if (titleKey.length < TRENDING.minKey) continue
 
     let best: TitleTrend | null = null
-    for (const wiki of wikis) {
-      for (const candidate of candidates(wiki)) {
+    for (const { wiki, keys } of searchable) {
+      for (const candidate of keys) {
         const match = strength(titleKey, candidate.key)
         if (!match) continue
         const trend: TitleTrend = {

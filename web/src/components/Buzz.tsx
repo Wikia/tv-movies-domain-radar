@@ -11,6 +11,12 @@ const BAND_TONE = {
   quiet: 'band4',
 } as const satisfies Record<BuzzReading['band'], string>
 
+const PANEL_SIZE = 12
+
+type ScoredTitle = Title & { buzz: BuzzReading }
+
+const risingFirst = (title: ScoredTitle): number => (title.buzz.phase === 'rising' ? 0 : 1)
+
 /** Titles whose Wikipedia attention has broken away from their own normal.
  *
  * This is the only list in the app ordered by a score rather than by date, and
@@ -31,13 +37,11 @@ export function Buzz({
   // match `ranked()` in src/buzz.ts, which the static dashboard uses; the two
   // sorted differently for one build and the panel came out visibly unordered.
   const ranked = titles
-    .filter((title) => title.buzz)
+    .filter((title): title is ScoredTitle => title.buzz != null)
     .sort(
-      (a, b) =>
-        Number(a.buzz!.phase !== 'rising') - Number(b.buzz!.phase !== 'rising') ||
-        b.buzz!.points - a.buzz!.points,
+      (a, b) => risingFirst(a) - risingFirst(b) || b.buzz.points - a.buzz.points,
     )
-    .slice(0, 12)
+    .slice(0, PANEL_SIZE)
 
   return (
     <Section
@@ -52,7 +56,7 @@ export function Buzz({
       ) : (
         <>
           {ranked.map((title) => {
-            const buzz = title.buzz!
+            const buzz = title.buzz
             return (
               <SignalRow
                 key={title.id}

@@ -27,7 +27,7 @@ import * as fandom from './sources/fandom.js'
 import { fetchUpcoming } from './sources/neutron.js'
 import * as wikipedia from './sources/wikipedia.js'
 import * as trending from './trending.js'
-import type { MediaType, RadarOutput, Title, TrendingReport } from './types.js'
+import type { MediaType, RadarOutput, Title, TitleTrend, TrendingReport } from './types.js'
 
 const OUT_DIR = path.join(ROOT, 'out')
 const TYPES: MediaType[] = ['movie', 'show']
@@ -179,39 +179,44 @@ function report(
   console.log('\n' + '='.repeat(72))
   console.log(` NEXT ${horizonDays} DAYS — ${inHorizon.length} titles landing`)
   console.log('='.repeat(72))
-  for (const t of inHorizon.slice(0, top)) {
-    const score = t.criticScore != null ? String(t.criticScore).padStart(3) : '  -'
+  // Buzz, not the Metascore — the dashboards dropped that column because almost
+  // nothing has a Metascore before release.
+  for (const title of inHorizon.slice(0, top)) {
+    const score = title.buzz ? String(title.buzz.points).padStart(3) : '  -'
     console.log(
-      `  ${t.releaseDate}  [${score}] ${t.type === 'movie' ? 'film' : 'tv  '} ${t.title}`,
+      `  ${title.releaseDate}  [${score}] ${title.type === 'movie' ? 'film' : 'tv  '} ${title.title}`,
     )
   }
 
   const hot = buzz.ranked(inHorizon, top)
   if (hot.length > 0) {
     console.log('\n' + '='.repeat(72))
-    console.log(' BUZZ — Wikipedia attention vs each title\'s own normal')
+    console.log(' BUZZ — size of the surge in Wikipedia attention')
     console.log('='.repeat(72))
-    for (const t of hot) {
-      const b = t.buzz!
+    for (const title of hot) {
+      const buzzed = title.buzz
       console.log(
-        `  ${String(b.points).padStart(3)}${b.spiking ? ' *' : '  '} ${t.releaseDate}  ` +
-          `${t.title}\n` +
-          `        ${b.recent.toLocaleString('en-US')}/day vs ${b.baseline.toLocaleString('en-US')} baseline ` +
-          `(${b.ratio}x raw, ${b.relative}x vs cohort ${b.cohort})`,
+        `  ${String(buzzed.points).padStart(3)} ${buzzed.band.padEnd(11)} ${buzzed.phase.padEnd(7)}` +
+          `${title.releaseDate}  ${title.title}\n` +
+          `        +${buzzed.excess.toLocaleString('en-US')}/day over normal ` +
+          `(${buzzed.baseline.toLocaleString('en-US')} → ${buzzed.recent.toLocaleString('en-US')}), ` +
+          `${buzzed.momentum}x week over week`,
       )
     }
-    console.log('\n  * = spiking. 50 points is normal for a title this close to release.')
+    console.log(
+      '\n  100 = The Odyssey at its peak (1.2M views/day). An ordinary trailer drop is 40-60.',
+    )
   }
 
   if (trend) {
     console.log('\n' + '='.repeat(72))
     console.log(` TRENDING ON FANDOM — week of ${trend.week}`)
     console.log('='.repeat(72))
-    const tied = inHorizon.filter((t) => t.trend)
+    const tied = inHorizon.filter((t): t is Title & { trend: TitleTrend } => t.trend != null)
     if (tied.length > 0) {
       console.log('\n  Upcoming titles whose wiki is trending:')
       for (const t of tied.slice(0, top)) {
-        const w = t.trend!
+        const w = t.trend
         const flag = w.isNew ? ' NEW' : w.velocity > 0 ? ` +${w.velocity.toFixed(2)}` : ''
         console.log(
           `    ${t.releaseDate}  ${t.title}\n` +

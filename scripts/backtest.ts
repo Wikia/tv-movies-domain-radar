@@ -25,8 +25,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
-import { attach } from '../src/buzz.js'
+import { attach, median } from '../src/buzz.js'
 import { BUZZ, ROOT, WIKI_USER_AGENT } from '../src/config.js'
+import { pooled } from '../src/sources/wikipedia.js'
 import type { Title } from '../src/types.js'
 
 const DAYS = 120
@@ -40,13 +41,6 @@ const CACHE = path.join(ROOT, 'data', 'backtest-series.json')
 const MIN_HISTORY = BUZZ.baselineDays + BUZZ.recentDays
 
 const stamp = (d: Date): string => d.toISOString().slice(0, 10).replace(/-/g, '')
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0
-  const s = [...values].sort((a, b) => a - b)
-  const mid = Math.floor(s.length / 2)
-  return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
-}
 
 async function fetchSeries(article: string, end: Date): Promise<Record<string, number>> {
   const start = new Date(end.getTime() - (DAYS - 1) * 86_400_000)
@@ -68,20 +62,6 @@ async function fetchSeries(article: string, end: Date): Promise<Record<string, n
     }
   }
   return {}
-}
-
-async function pooled<T, R>(items: T[], limit: number, work: (t: T) => Promise<R>): Promise<R[]> {
-  const out = new Array<R>(items.length)
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, async () => {
-      while (next < items.length) {
-        const i = next++
-        out[i] = await work(items[i]!)
-      }
-    }),
-  )
-  return out
 }
 
 async function main(): Promise<void> {

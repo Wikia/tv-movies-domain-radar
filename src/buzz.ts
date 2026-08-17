@@ -15,17 +15,18 @@
  *    compared against the median growth of titles at the same distance from
  *    release, so only *unusual* movement survives.
  *
- * And one honesty rule the old score didn't have: a title with no data scores
- * `null`, never 0. "No signal" and "cold" are different claims and the UI has
- * to keep them apart.
+ * And one honesty rule the old score didn't have: a title with no data gets no
+ * reading at all, rather than a 0. "No signal" and "cold" are different claims
+ * and the UI has to keep them apart.
  */
 import { BUZZ } from './config.js'
 import type { Buzz, Title } from './types.js'
 
 /** Middle value of a sorted copy. Median rather than mean throughout: these
  * series are spiky by nature and one past spike shouldn't blind the detector
- * for a month afterwards. */
-function median(values: number[]): number {
+ * for a month afterwards. Exported so the backtest measures with the same
+ * statistic the detector uses. */
+export function median(values: number[]): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
   const mid = Math.floor(sorted.length / 2)
@@ -92,9 +93,10 @@ function measure(series: number[]): Raw | null {
  */
 function toPoints(excess: number): number {
   if (excess <= BUZZ.floorExcess) return 0
-  const span = Math.log10(BUZZ.anchorExcess) - Math.log10(BUZZ.floorExcess)
-  const points = (100 * (Math.log10(excess) - Math.log10(BUZZ.floorExcess))) / span
-  return Math.max(0, Math.min(100, Math.round(points)))
+  const floor = Math.log10(BUZZ.floorExcess)
+  const span = Math.log10(BUZZ.anchorExcess) - floor
+  const points = (100 * (Math.log10(excess) - floor)) / span
+  return Math.min(100, Math.round(points))
 }
 
 function bandOf(points: number): Buzz['band'] {
@@ -111,36 +113,33 @@ function bandOf(points: number): Buzz['band'] {
  * so the caller can report coverage rather than quietly implying full coverage.
  */
 export function attach(titles: Title[], series: Map<number, number[]>): number {
-  // Pass 1: raw readings.
-  const raws = new Map<number, Raw>()
+  // Pass 1: raw readings, each tagged with its cohort. Bucketing here rather
+  // than again in pass 3 keeps the two passes from ever disagreeing about which
+  // cohort a title belongs to.
+  const readings: { title: Title; raw: Raw; bucket: string }[] = []
   for (const title of titles) {
     const values = series.get(title.id)
     if (!values) continue
     const raw = measure(values)
-    if (raw) raws.set(title.id, raw)
+    if (raw) readings.push({ title, raw, bucket: bucketOf(title.daysOut) })
   }
 
   // Pass 2: the cohort baseline — the median ratio among titles at a similar
   // distance from release. This is what strips out the release ramp, and it
   // also absorbs anything that moved the whole calendar at once (a holiday, a
   // Wikipedia outage), since that shifts every ratio together.
-  const byBucket = new Map<string, number[]>()
-  for (const title of titles) {
-    const raw = raws.get(title.id)
-    if (!raw) continue
-    const bucket = bucketOf(title.daysOut)
-    byBucket.set(bucket, [...(byBucket.get(bucket) ?? []), raw.ratio])
+  const ratiosByBucket = new Map<string, number[]>()
+  for (const { raw, bucket } of readings) {
+    const ratios = ratiosByBucket.get(bucket)
+    if (ratios) ratios.push(raw.ratio)
+    else ratiosByBucket.set(bucket, [raw.ratio])
   }
   const cohortRatio = new Map(
-    [...byBucket.entries()].map(([bucket, ratios]) => [bucket, median(ratios) || 1]),
+    [...ratiosByBucket].map(([bucket, ratios]) => [bucket, median(ratios) || 1]),
   )
 
   // Pass 3: detrend and score.
-  let scored = 0
-  for (const title of titles) {
-    const raw = raws.get(title.id)
-    if (!raw) continue
-    const bucket = bucketOf(title.daysOut)
+  for (const { title, raw, bucket } of readings) {
     const cohort = cohortRatio.get(bucket) ?? 1
     const relative = raw.ratio / cohort
 
@@ -158,7 +157,7 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
     const excess = Math.max(0, raw.recent - expected)
     const points = toPoints(excess)
 
-    const buzz: Buzz = {
+    title.buzz = {
       points,
       band: bandOf(points),
       excess: Math.round(excess),
@@ -175,10 +174,8 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
       // were.
       spiking: phase === 'rising',
     }
-    title.buzz = buzz
-    scored++
   }
-  return scored
+  return readings.length
 }
 
 /** Titles worth showing in the buzz panel.
@@ -189,10 +186,18 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
  *
  * Deliberately NOT applied to the schedule, which stays chronological.
  */
-export function ranked(titles: Title[], limit: number): Title[] {
-  const rank = (t: Title): number => (t.buzz!.phase === 'rising' ? 0 : 1)
+export function ranked(titles: Title[], limit: number): ScoredTitle[] {
+  const risingFirst = (title: ScoredTitle): number => (title.buzz.phase === 'rising' ? 0 : 1)
   return titles
-    .filter((t) => t.buzz)
-    .sort((a, b) => rank(a) - rank(b) || b.buzz!.points - a.buzz!.points)
+    .filter(isScored)
+    .sort((a, b) => risingFirst(a) - risingFirst(b) || b.buzz.points - a.buzz.points)
     .slice(0, limit)
+}
+
+/** A title that actually has a reading. Callers get this back from `ranked()`
+ * so they can read `.buzz` without a non-null assertion at every use. */
+export type ScoredTitle = Title & { buzz: Buzz }
+
+export function isScored(title: Title): title is ScoredTitle {
+  return title.buzz != null
 }

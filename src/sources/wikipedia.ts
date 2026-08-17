@@ -34,6 +34,14 @@ interface CacheEntry {
 }
 type Cache = Record<string, CacheEntry>
 
+/** Outcome of one lookup. `failed` is a distinct state from `absent` because
+ * only `absent` is safe to remember — caching a transient network failure as
+ * "this title has no article" suppressed titles for a week. */
+type Resolution =
+  | { status: 'found'; article: string }
+  | { status: 'absent' }
+  | { status: 'failed' }
+
 /** Cache key. Includes year and type because "Cliffhanger" the 1993 film and
  * "Cliffhanger" the 2026 film are different articles and different signals. */
 function cacheKey(title: Title): string {
@@ -77,7 +85,7 @@ async function getJson(url: string, attempts = 3): Promise<unknown> {
 
 /** Run `work` over `items` with a small number in flight, so a 200-title run
  * stays inside Wikimedia's anonymous rate limits. */
-async function pooled<T, R>(
+export async function pooled<T, R>(
   items: T[],
   limit: number,
   work: (item: T) => Promise<R>,
@@ -117,7 +125,13 @@ async function search(title: Title): Promise<string | null> {
 }
 
 /** Categories that mark an article as being about a film or a TV show. */
-const SCREEN_CATEGORY = /\b(films?|film series|television series|television films?|miniseries|telenovelas?|anime)\b/i
+const SCREEN_CATEGORY =
+  /\b(films?|film series|television series|television films?|miniseries|telenovelas?|anime)\b/i
+
+/** Titles per categories request. Twenty rather than the API's 50 maximum:
+ * fewer continuation rounds and a shorter URL, which made this step markedly
+ * less flaky over a full run. */
+const CATEGORY_BATCH = 20
 
 /** Confirm that bare (undisambiguated) articles really are about a film or show.
  *
@@ -127,8 +141,7 @@ const SCREEN_CATEGORY = /\b(films?|film series|television series|television film
  * "(2026 film)"-style disambiguator have already told us what they are, so only
  * bare ones need this check.
  *
- * Categories come back 50 titles per request, so this costs ~2 calls per run
- * and is cached forever afterwards.
+ * Verdicts are cached with the resolution, so this runs once per new title.
  */
 async function keepScreenArticles(candidates: string[]): Promise<Map<string, boolean>> {
   // true = confirmed film/show, false = confirmed something else, ABSENT =
@@ -136,10 +149,8 @@ async function keepScreenArticles(candidates: string[]): Promise<Map<string, boo
   // not be cached, or a transient failure silently becomes "not a film".
   const verdict = new Map<string, boolean>()
 
-  // Batches of 20 rather than 50: fewer continuation rounds per request and a
-  // shorter URL, which made this step markedly less flaky under a full run.
-  for (let i = 0; i < candidates.length; i += 20) {
-    const batch = candidates.slice(i, i + 20)
+  for (let i = 0; i < candidates.length; i += CATEGORY_BATCH) {
+    const batch = candidates.slice(i, i + CATEGORY_BATCH)
     const base =
       `https://en.wikipedia.org/w/api.php?action=query&format=json&prop=categories` +
       `&cllimit=500&titles=${encodeURIComponent(batch.join('|'))}`
@@ -209,42 +220,44 @@ export async function resolveArticles(
   })
 
   if (needed.length > 0) {
-    // FAILED is a third state alongside "found" and "no such article". Only the
-    // latter two are cached; a failure is left absent so the next run retries,
-    // rather than being frozen in as a miss for `retryMissAfterDays`.
-    const FAILED = Symbol('failed')
-    const found = await pooled(needed, BUZZ.concurrency, (title) =>
-      search(title).catch(() => FAILED as typeof FAILED),
+    const results = await pooled(needed, BUZZ.concurrency, (title) =>
+      search(title).then(
+        (article): Resolution => (article ? { status: 'found', article } : { status: 'absent' }),
+        (): Resolution => ({ status: 'failed' }),
+      ),
     )
 
     // Verify the bare ones actually describe a film or show before trusting
     // them. If verification itself fails, treat those as unresolved-this-run
     // too — never as "not a film", which would cache a wrong negative.
-    const bare = [
-      ...new Set(
-        found.filter((a): a is string => typeof a === 'string' && !a.includes('(')),
-      ),
-    ]
+    const bare = new Set<string>()
+    for (const result of results) {
+      if (result.status === 'found' && !result.article.includes('(')) bare.add(result.article)
+    }
     const verified =
-      bare.length > 0
-        ? await keepScreenArticles(bare).catch(() => new Map<string, boolean>())
+      bare.size > 0
+        ? await keepScreenArticles([...bare]).catch(() => new Map<string, boolean>())
         : new Map<string, boolean>()
 
     needed.forEach((title, i) => {
-      const article = found[i]
-      if (article === FAILED) return // retry next run
-      if (article === null) {
-        cache[cacheKey(title)] = { article: null, checked: todayKey }
-        return
-      }
-      if (typeof article !== 'string') return
-      if (article.includes('(')) {
+      const result = results[i]
+      // Only "found" and "absent" are cached. A failure is left unrecorded so
+      // the next run retries it, rather than being frozen in as a miss for
+      // `retryMissAfterDays`.
+      if (!result || result.status === 'failed') return
+
+      const remember = (article: string | null): void => {
         cache[cacheKey(title)] = { article, checked: todayKey }
-        return
       }
-      const isScreen = verified.get(article)
+      if (result.status === 'absent') return remember(null)
+
+      // Already disambiguated ("Cliffhanger (2026 film)") — it has told us what
+      // it is, so no category check is needed.
+      if (result.article.includes('(')) return remember(result.article)
+
+      const isScreen = verified.get(result.article)
       if (isScreen === undefined) return // couldn't check — retry next run
-      cache[cacheKey(title)] = { article: isScreen ? article : null, checked: todayKey }
+      remember(isScreen ? result.article : null)
     })
     await mkdir(path.dirname(CACHE_FILE), { recursive: true })
     await writeFile(CACHE_FILE, JSON.stringify(cache, null, 2))
@@ -313,14 +326,14 @@ export async function fetchSeries(
   today: Date,
   days: number,
 ): Promise<Map<number, number[]>> {
-  const entries = [...articles.entries()]
-  const series = await pooled(entries, BUZZ.concurrency, async ([, article]) =>
+  const entries = [...articles]
+  const series = await pooled(entries, BUZZ.concurrency, ([, article]) =>
     pageviews(article, today, days).catch(() => []),
   )
-  const out = new Map<number, number[]>()
+  const byTitle = new Map<number, number[]>()
   entries.forEach(([id], i) => {
     const values = series[i]
-    if (values && values.length > 0) out.set(id, values)
+    if (values?.length) byTitle.set(id, values)
   })
-  return out
+  return byTitle
 }

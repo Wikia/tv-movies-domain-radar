@@ -468,7 +468,7 @@ function renderBuzz(titles: Title[], coverage: RadarOutput['buzz']): string {
   }
   return top
     .map((t) => {
-      const b = t.buzz!
+      const b = t.buzz
       // A fading title is still elevated but its event has passed, so it gets a
       // quiet label rather than the same badge as a live one.
       const flag =
