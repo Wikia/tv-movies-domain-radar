@@ -176,6 +176,7 @@ export async function load(file = TRENDING_CSV): Promise<TrendingWiki[]> {
       name,
       week,
       trendingScore,
+      priorScore: prior > 0 ? prior : null,
       velocity,
       isNew,
       fpScore: fpScore(trendingScore, velocity, isNew),

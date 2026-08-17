@@ -56,7 +56,16 @@ export interface Title {
  * "exactly normal for its age".
  */
 export interface Buzz {
-  points: number // 0..100; 50 = normal, 65 = 2x, 80 = 4x, 100 = 10x+
+  /** 0..100 by the SIZE of the surge, anchored so 100 = The Odyssey's
+   * 1.2M views/day peak. An ordinary trailer drop lands in the 40s-60s. */
+  points: number
+  /** Which colour band `points` falls in — a green -> yellow -> orange -> red
+   * heat ramp. Always rendered alongside the number, so colour is never the
+   * only channel. */
+  band: 'exceptional' | 'strong' | 'notable' | 'quiet'
+  /** Daily views beyond what a title of this age would be getting anyway.
+   * This is what `points` is computed from. */
+  excess: number
   recent: number // mean daily views over the recent window
   baseline: number // median daily views over the baseline window
   ratio: number // recent / baseline, before cohort adjustment
@@ -78,6 +87,10 @@ export interface TrendingWiki {
   name: string // human display name
   week: string // trending_week, ISO date — the export is WEEKLY, not daily
   trendingScore: number // 0..1 level: how hot the wiki is this week
+  /** Last week's score, or null when the wiki wasn't in last week's export.
+   * Kept so the UI can say "was 16%, now 85%" instead of printing a velocity
+   * delta that means nothing to a reader. */
+  priorScore: number | null
   velocity: number // week-over-week rise, >= 0; 0 when prior week is untrustworthy
   isNew: boolean // first week this wiki has trended in the 8-week window
   fpScore: number // 0..1 composite of the three above

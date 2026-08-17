@@ -98,8 +98,12 @@ Regenerate the release radar. All commands run from the repo root.
   our audience reads *now*, which is mostly catalog; a handful of ties out of
   200+ upcoming titles is normal. A title with no tag has **no signal**, which
   is not the same as being cold.
-- **`MC` is the Metascore**, and most upcoming titles have none. That's normal
-  before release, not missing data.
+- **The schedule's score column is Buzz, not the Metascore.** The Metascore
+  column was dropped: almost nothing has one before release, so it was a column
+  of dashes. A dash in the Buzz column means *not measured* — no Wikipedia
+  article, or too little traffic to read — and a `0` means measured with no
+  surge. Neither means "cold". `criticScore` is still in `radar.json` if you
+  need it.
 - The first run of a **new day** diffs against the previous day and will report
   changes; only a run with no earlier day on record reports nothing.
 

@@ -87,7 +87,16 @@ orders them:
 - **Unmapped** — trending wikis with *no* upcoming release behind them (57 of
   59 on that run). This is the "are we missing something?" list, and for TV/film
   it's arguably the more valuable half: a back-catalog show surging on a
-  streamer is invisible to a release calendar by construction.
+  streamer is invisible to a release calendar by construction. It renders full
+  width **below** the schedule rather than in the sidebar, because at 300px each
+  wiki was one truncated line.
+
+Every figure in that panel is phrased as a sentence — "2,393 readers in 14 days
+· 16% → 85% this week", with a `1st week trending` or `climbing` badge. It used
+to print `0.83 · level 0.85 · +0.69`, which is the raw export's vocabulary:
+three unlabelled decimals that look like the same kind of number and aren't.
+`priorScore` is carried through the pipeline purely so the UI can say "was 16%,
+now 85%" instead of a velocity delta no reader can interpret.
 
 ### Matching is strict, on purpose
 
@@ -192,12 +201,76 @@ score:
 | `ratio` | `recent / baseline` — raw growth |
 | `relative` | `ratio` ÷ the median ratio of its days-out cohort — the detrended figure, and the one to reason about |
 | `momentum` | `recent` ÷ median of the **7 days immediately before** it. >1 climbing, <1 falling |
-| `points` | `50 + 15·log₂(relative)`, clamped 0–100. **50 is normal**, 65 is 2×, 80 is 4×, 100 is 10×+ |
+| `excess` | `recent − (baseline × cohort ratio)` — daily views beyond what a title this close to release would get anyway. **This is what `points` measures.** |
+| `points` | 0–100 log-scaled on `excess`, anchored so **100 = 1,200,000 excess views/day** |
+| `band` | `exceptional` (≥85) · `strong` (≥60) · `normal` |
 | `phase` | `rising` (≥2× and climbing) · `fading` (≥2× but falling) · `flat` |
 | `spiking` | `phase === 'rising'` |
 
-Log-scaled because attention is multiplicative: 1,000 → 2,000 views is the same
-kind of event as 10,000 → 20,000, and a linear scale would disagree.
+### Why `points` measures size, not multiple
+
+An earlier version scored the *multiple* (`relative`), which ranked a small
+article going 200 → 3,700/day above a major one going 3,000 → 32,000/day — when
+the second is by far the larger event. Points now measure the **size of the
+anomaly** in absolute excess views.
+
+Using *excess* rather than raw views is what keeps this from becoming the fame
+score that was deleted: a huge title sitting at its normal level has excess ≈ 0
+and scores ≈ 0. Only a surge scores, whoever it belongs to.
+
+### The anchor: 100 = The Odyssey
+
+The scale is pinned to a real measured event rather than a guess. Peak daily
+Wikipedia views, from the API:
+
+| Title | Peak/day | Would score |
+|---|---:|---:|
+| The Odyssey (18 Jul 2026) | 1,199,464 | **100** |
+| Superman (2025) | 651,446 | 93 |
+| Avatar: Fire and Ash | 494,427 | 90 |
+| Wicked: For Good | 231,066 | 82 |
+| *Verity, today's biggest* | *31,883* | *60* |
+
+So an ordinary trailer drop lands in the **40s–60s**, and 100 means a
+once-a-year cultural moment. That is deliberate: a score everything can reach
+measures nothing.
+
+Band edges sit at **85 / 60** rather than the 90 / 70 the raw anchor suggests,
+because at 90/70 a normal week produced no coloured rows at all and the scale
+never showed itself. In excess views/day the edges are roughly 330,000
+(`exceptional`) and 28,000 (`strong`).
+
+### The heat palette
+
+A four-step green → yellow → orange → red ramp:
+
+| Band | Points | Light | Dark |
+|---|---:|---|---|
+| `exceptional` | ≥85 | `#b4232a` | `#ef4444` |
+| `strong` | ≥60 | `#e2622a` | `#fb923c` |
+| `notable` | ≥40 | `#eda100` | `#fde047` |
+| `quiet` | <40 | `#008300` | `#4ade80` |
+
+**The steps were re-picked until they passed, not chosen by eye.** Validated with
+the dataviz skill's `validate_palette.js` against this app's own surfaces
+(`#FAFAF9` / `#0C0C0D`) — obvious picks fail:
+
+- `#ea580c` orange vs `#d97706` amber: deutan ΔE **1.6**, and **6.7** even with
+  full colour vision;
+- on the dark ground every step must clear 3:1, which pushes orange and red
+  together — `#eb6834` sits ΔE **5.6** from `#e66767`.
+
+The shipped sets clear the gates: light worst-adjacent deutan ΔE 11.9 /
+normal-vision 15.1; dark normal-vision 16.2 / protan 8.2. Dark is a **separate
+selection**, not a lightened copy of light.
+
+Yellow is sub-3:1 on the light ground, so **the score is always rendered beside
+the colour** — colour is reinforcement, never the only channel. That also means
+the ramp survives greyscale and forced-colors.
+
+A red→green ramp of only two colours was tried first and rejected for a
+different reason: with two bands, everything on an ordinary week landed in the
+same neutral and a 34 looked identical to a 60.
 
 **Why momentum exists.** A 28-day baseline has a long memory, so a title that
 peaked two weeks ago still scores as if it were spiking. *Wicker* went 500/day →

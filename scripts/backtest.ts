@@ -147,7 +147,11 @@ async function main(): Promise<void> {
     const series = new Map<number, number[]>()
     for (const [id, values] of dense) {
       if (values.length <= j) continue
-      const title = titleById.get(id)!
+      // The cached history outlives the calendar: titles that have since fallen
+      // out of "coming soon" still have an entry here. Skip them rather than
+      // asserting non-null, which crashed the whole run 31 titles later.
+      const title = titleById.get(id)
+      if (!title) continue
       const daysOut = title.releaseDate
         ? Math.round((Date.parse(`${title.releaseDate}T00:00:00Z`) - asOf) / 86_400_000)
         : null

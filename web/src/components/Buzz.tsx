@@ -1,6 +1,15 @@
 import { compact } from '../lib/format'
-import type { RadarOutput, Title } from '../types'
+import type { Buzz as BuzzReading, RadarOutput, Title } from '../types'
 import { Empty, Section, SignalRow, Tag } from './Primitives'
+
+/** Four steps so a 34 and a 60 don't land on the same colour — which is exactly
+ * what happened when the ramp had only two coloured bands. */
+const BAND_TONE = {
+  exceptional: 'band1',
+  strong: 'band2',
+  notable: 'band3',
+  quiet: 'band4',
+} as const satisfies Record<BuzzReading['band'], string>
 
 /** Titles whose Wikipedia attention has broken away from their own normal.
  *
@@ -18,16 +27,15 @@ export function Buzz({
   coverage: RadarOutput['buzz']
   total: number
 }) {
-  // Ordered by `relative`, not `points`: points clamp at 100 and several titles
-  // reach it, which would make the order between them arbitrary. Rising events
-  // sort above fading ones — a spike still climbing is actionable in a way the
-  // tail of a finished one isn't.
+  // Rising events first, then by points — i.e. by the SIZE of the surge. Must
+  // match `ranked()` in src/buzz.ts, which the static dashboard uses; the two
+  // sorted differently for one build and the panel came out visibly unordered.
   const ranked = titles
     .filter((title) => title.buzz)
     .sort(
       (a, b) =>
         Number(a.buzz!.phase !== 'rising') - Number(b.buzz!.phase !== 'rising') ||
-        b.buzz!.relative - a.buzz!.relative,
+        b.buzz!.points - a.buzz!.points,
     )
     .slice(0, 12)
 
@@ -51,17 +59,21 @@ export function Buzz({
                 name={title.title}
                 score={String(buzz.points)}
                 percent={buzz.points}
-                detail={`${compact(buzz.baseline)} → ${compact(buzz.recent)}/day · ${buzz.relative}× vs similar · ${buzz.momentum}× wk`}
-                title={`${buzz.baseline}/day baseline → ${buzz.recent}/day recent, cohort ${buzz.cohort}, momentum ${buzz.momentum}× week over week`}
+                tone={BAND_TONE[buzz.band]}
+                detail={`+${compact(buzz.excess)}/day over normal · ${compact(buzz.baseline)} → ${compact(buzz.recent)} · ${buzz.momentum}× wk`}
+                title={`+${buzz.excess}/day beyond normal for its age (${buzz.baseline} → ${buzz.recent}), cohort ${buzz.cohort}, momentum ${buzz.momentum}× week over week`}
                 badges={
-                  // A fading title is still elevated but its event has passed,
-                  // so it gets a quiet label rather than the same badge as a
-                  // live one.
-                  buzz.phase === 'rising' ? (
-                    <Tag tone="hot">rising</Tag>
-                  ) : buzz.phase === 'fading' ? (
-                    <Tag tone="muted">fading</Tag>
-                  ) : null
+                  <>
+                    {/* Band colour never travels without the band's name. */}
+                    <Tag tone={BAND_TONE[buzz.band]}>{buzz.band}</Tag>
+                    {/* A fading title is still elevated but its event has
+                        passed, so it gets a quiet label. */}
+                    {buzz.phase === 'rising' ? (
+                      <Tag tone="hot">rising</Tag>
+                    ) : buzz.phase === 'fading' ? (
+                      <Tag tone="muted">fading</Tag>
+                    ) : null}
+                  </>
                 }
               />
             )

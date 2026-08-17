@@ -37,6 +37,28 @@ const COLS =
   'sm:grid-cols-[64px_28px_1fr_40px_40px_88px] ' +
   'lg:grid-cols-[64px_28px_1fr_40px_160px_40px_88px]'
 
+/** The schedule's scroll box.
+ *
+ * `pr-3` and `scrollbar-gutter:stable` are not cosmetic: the grid's last column
+ * (the countdown) is right-aligned to the container edge, and an overlay
+ * scrollbar sat directly on top of it. The gutter reserves the space whether or
+ * not the bar is visible, so rows don't shift when it appears.
+ *
+ * Height is set to sit roughly level with the sidebar (Buzz + the change log)
+ * rather than to fill the viewport: Trending on Fandom now runs full width
+ * BELOW both columns, so the two need to end at about the same place or the
+ * page has a long empty gutter on one side. */
+const SCROLL = 'max-h-[62rem] overflow-y-auto pr-3 [scrollbar-gutter:stable]'
+
+/** Band -> text colour for the inline score. Written out in full because
+ * Tailwind scans for literal class names. */
+const BAND_TEXT = {
+  exceptional: 'text-hot-1',
+  strong: 'text-hot-2',
+  notable: 'text-hot-3',
+  quiet: 'text-hot-4',
+} as const
+
 export function Schedule({
   titles,
   horizonDays,
@@ -115,7 +137,7 @@ export function Schedule({
       {visible.length === 0 ? (
         <Empty>Nothing matches those filters.</Empty>
       ) : (
-        <div className="max-h-[42rem] overflow-y-auto">
+        <div className={SCROLL}>
           <div
             className={`${COLS} sticky top-0 z-20 border-b border-line bg-ground py-1.5 text-[10px] tracking-wide text-ink-3 uppercase`}
           >
@@ -124,8 +146,11 @@ export function Schedule({
             <span>Title</span>
             <span>Type</span>
             <span className="hidden lg:block">Genres</span>
-            <span className="text-right" title="Metascore — usually absent before release">
-              MC
+            <span
+              className="text-right"
+              title="Buzz — Wikipedia attention vs this title's own normal. 50 is normal."
+            >
+              Buzz
             </span>
             <span className="hidden text-right sm:block">Out</span>
           </div>
@@ -164,9 +189,12 @@ function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
 
       <Poster title={title} className="w-7 rounded-[3px]" textClass="text-[8px]" />
 
-      <span className="min-w-0 truncate text-sm group-hover:text-accent">
-        {title.title}
-        <span className="ml-2 inline-flex gap-1 align-middle">
+      {/* The title truncates; the badges must not. They used to live inside the
+          truncating span, so a long title silently ate the "new on calendar"
+          tag and the buzz score — the two things the row exists to flag. */}
+      <span className="flex min-w-0 items-center gap-2 text-sm group-hover:text-accent">
+        <span className="truncate">{title.title}</span>
+        <span className="flex shrink-0 items-center gap-1">
           {/* Reasons with a blank label render nothing — see REASON_LABEL. */}
           {(reasons ?? [])
             .filter((reason) => REASON_LABEL[reason] !== '')
@@ -178,15 +206,7 @@ function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
 
           {/* Only SPIKING titles are tagged. Tagging all ~138 measured ones
               would make the marker meaningless. */}
-          {title.buzz?.spiking && (
-            <Tag tone="hot">
-              <span
-                title={`Wikipedia views ${title.buzz.baseline}/day → ${title.buzz.recent}/day, ${title.buzz.relative}× vs similar titles, ${title.buzz.momentum}× week over week`}
-              >
-                rising
-              </span>
-            </Tag>
-          )}
+          {/* Buzz lives in its own column now — see below. Nothing here. */}
 
           {/* "franchise hot" is a weaker claim than "wiki hot" — the franchise
               hub is drawing an audience, not necessarily this title. Kept
@@ -211,14 +231,28 @@ function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
         {title.genres.slice(0, 2).join(', ') || '—'}
       </span>
 
-      {/* Most titles have no Metascore before release. An explicit dash says
-          "not rated yet" instead of leaving a hole that reads as a bug. */}
-      {title.criticScore != null ? (
-        <span className="figure text-right text-xs text-ink-2">{title.criticScore}</span>
+      {/* Buzz replaced the Metascore column: most upcoming titles have no
+          Metascore, so it was a column of dashes, and the buzz number is the
+          thing worth scanning down. Rising titles are emphasised; measured but
+          static ones stay quiet. An explicit dash means "not measured" — NOT
+          "cold" — which the tooltip says outright. */}
+      {title.buzz ? (
+        <span
+          className={`figure text-right text-xs ${
+            // A 0 means measured with no surge at all. Painting it a band
+            // colour implies a signal that isn't there, so zero stays neutral.
+            title.buzz.points === 0 ? 'text-ink-3' : BAND_TEXT[title.buzz.band]
+          } ${title.buzz.spiking ? 'font-semibold' : 'opacity-70'}`}
+          title={`Buzz ${title.buzz.points}/100 · ${title.buzz.band}${
+            title.buzz.spiking ? ' · rising' : ''
+          } — +${title.buzz.excess} views/day over normal (${title.buzz.baseline} → ${title.buzz.recent})`}
+        >
+          {title.buzz.points}
+        </span>
       ) : (
         <span
           className="figure text-right text-xs text-ink-3/60"
-          title="No Metascore yet — normal before release"
+          title="No buzz signal — no Wikipedia article, or too little traffic to read. Not the same as cold."
         >
           —
         </span>

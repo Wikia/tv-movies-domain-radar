@@ -74,6 +74,37 @@ export const BUZZ = {
    * after removing the ramp every title its age is getting". */
   spikeRatio: 2,
 
+  /** What 100 points means, in EXCESS daily pageviews — attention beyond what
+   * the title would be getting anyway.
+   *
+   * Anchored on a real event rather than a guess: The Odyssey peaked at
+   * 1,199,464 views/day on 2026-07-18 against a 14k median. For scale, Superman
+   * (2025) peaked at 651k, Avatar: Fire and Ash at 494k, Wicked: For Good at
+   * 231k. So 100 is a genuine once-a-year cultural moment, and an ordinary
+   * trailer drop lands in the 40s-60s — which is the point. A score that
+   * everything can reach measures nothing. */
+  anchorExcess: 1_200_000,
+
+  /** Excess below this is noise and scores 0 regardless of multiple. */
+  floorExcess: 100,
+
+  /** Band edges, in points — a green -> yellow -> orange -> red heat ramp.
+   *
+   * Four bands rather than two because with only two, everything on an ordinary
+   * week landed in the same neutral colour and a 34 looked identical to a 60.
+   * Getting four to work needed the hues re-stepped until adjacent pairs cleared
+   * separation in BOTH modes (see the palette note in artifact.ts) — the obvious
+   * green/yellow/orange/red picks fail, orange against yellow in light and
+   * orange against red in dark.
+   *
+   * In excess views/day the edges land at roughly:
+   *   exceptional (85) ~= 330,000/day — Wicked: For Good and up
+   *   strong      (60) ~=  28,000/day — a major trailer drop
+   *   notable     (40) ~=   4,700/day — a solid, visible bump
+   *   quiet       (<40)               — measurable but minor
+   */
+  bands: { exceptional: 85, strong: 60, notable: 40 },
+
   /** Days immediately before the recent window, used to tell a spike that is
    * still climbing from the decaying tail of one that already happened.
    *

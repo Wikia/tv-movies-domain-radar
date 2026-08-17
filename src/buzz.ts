@@ -77,18 +77,31 @@ function measure(series: number[]): Raw | null {
 
 /** Map a detrended ratio onto 0..100.
  *
- * Doubling is +15 points: normal = 50, 2x = 65, 4x = 80, 10x = 100. Log scaled
- * because attention is multiplicative — 1,000 -> 2,000 views is the same kind
- * of event as 10,000 -> 20,000, and a linear scale would disagree.
+ * Points measure the SIZE of the anomaly — excess daily views over what the
+ * title would be getting anyway — not the multiple. That change matters:
+ * scoring the multiple made a small article going 200 -> 3,700 outrank a big
+ * one going 3,000 -> 32,000, when the second is by far the larger event.
  *
- * 15 rather than 25 per doubling because at 25 the scale topped out at only 4x
- * and eight titles piled up on exactly 100, discarding the ordering between a
- * 4x move and a 17x one. Rank on `relative`, which never saturates; `points`
- * exists to be readable at a glance.
+ * Using *excess* rather than raw views keeps this from becoming the fame score
+ * that was deleted: a huge title sitting at its normal level has excess ~0 and
+ * scores ~0. Only a surge scores, whoever it belongs to.
+ *
+ * Log-scaled because attention is multiplicative, and anchored so 100 is The
+ * Odyssey's 1.2M/day peak — a real once-a-year event, not a threshold an
+ * ordinary trailer can reach.
  */
-function toPoints(ratio: number): number {
-  const points = 50 + 15 * Math.log2(Math.max(ratio, 0.01))
+function toPoints(excess: number): number {
+  if (excess <= BUZZ.floorExcess) return 0
+  const span = Math.log10(BUZZ.anchorExcess) - Math.log10(BUZZ.floorExcess)
+  const points = (100 * (Math.log10(excess) - Math.log10(BUZZ.floorExcess))) / span
   return Math.max(0, Math.min(100, Math.round(points)))
+}
+
+function bandOf(points: number): Buzz['band'] {
+  if (points >= BUZZ.bands.exceptional) return 'exceptional'
+  if (points >= BUZZ.bands.strong) return 'strong'
+  if (points >= BUZZ.bands.notable) return 'notable'
+  return 'quiet'
 }
 
 /**
@@ -138,8 +151,17 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
         ? 'fading'
         : 'rising'
 
+    // Excess is measured against what the cohort says this title should be
+    // doing at its age, not against its own flat baseline — so the release
+    // ramp is removed from the magnitude too, not just from the multiple.
+    const expected = raw.baseline * cohort
+    const excess = Math.max(0, raw.recent - expected)
+    const points = toPoints(excess)
+
     const buzz: Buzz = {
-      points: toPoints(relative),
+      points,
+      band: bandOf(points),
+      excess: Math.round(excess),
       recent: Math.round(raw.recent),
       baseline: Math.round(raw.baseline),
       ratio: Math.round(raw.ratio * 100) / 100,
@@ -161,10 +183,9 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
 
 /** Titles worth showing in the buzz panel.
  *
- * Ordered by `relative` rather than `points` because points clamp at 100 and
- * several titles reach it, which would make the ordering between them
- * arbitrary. Rising events sort above fading ones at equal size — a spike
- * still climbing is actionable in a way that the tail of a dead one isn't.
+ * Rising events first, then by points — which now means by the SIZE of the
+ * surge. Ranking by multiple instead put tiny articles with big percentages
+ * above genuinely large events.
  *
  * Deliberately NOT applied to the schedule, which stays chronological.
  */
@@ -172,6 +193,6 @@ export function ranked(titles: Title[], limit: number): Title[] {
   const rank = (t: Title): number => (t.buzz!.phase === 'rising' ? 0 : 1)
   return titles
     .filter((t) => t.buzz)
-    .sort((a, b) => rank(a) - rank(b) || b.buzz!.relative - a.buzz!.relative)
+    .sort((a, b) => rank(a) - rank(b) || b.buzz!.points - a.buzz!.points)
     .slice(0, limit)
 }

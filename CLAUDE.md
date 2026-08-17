@@ -16,6 +16,14 @@ Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
   wiki traffic) and `title.buzz` (Wikipedia pageviews vs the title's own normal).
 - **Flags:** `--horizon N`, `--top N`, `--today YYYY-MM-DD`.
 - **Check:** `npm run typecheck`, `npm run web:build`.
+- **`npm run typecheck` does NOT cover `web/`.** The React app is typechecked by
+  its own `tsc -b`, which runs as part of `npm run web:build`. So a broken
+  component compiles clean at the root and the build fails instead — and if you
+  redirect that build's output you'll screenshot a stale bundle and think the
+  change landed. Never `web:build >/dev/null`; read its output.
+- **A JSX comment can't be a ternary branch's sibling.** `cond ? ( {/* … */}
+  <div/> ) : …` is a syntax error, and it bit this repo twice. Put the comment
+  above the statement or hoist the value to a named const.
 - **Before changing the buzz scoring, run `npm run backtest`** and compare. It
   replays the real detector over 120 days of history and reports precision
   against a control base rate. Current baseline: 87% of fires still elevated
@@ -126,8 +134,24 @@ into one number — you have rebuilt the thing that was deleted.
   (a 7-day memory) gates it: `spiking` requires elevated AND still climbing.
   Don't remove that gate to "get more results" — the results it removes are
   stale by construction.
-- **Rank on `relative`, never `points`.** Points clamp at 100 and several titles
-  reach it, so sorting by them scrambles the top of the list.
+- **`points` measures the SIZE of the surge (excess views/day), not the
+  multiple.** Scoring the multiple ranked a 200→3,700 article above a
+  3,000→32,000 one. Excess is used rather than raw views so a big title sitting
+  at its normal level scores ~0 — that's what keeps it from becoming the fame
+  score that was deleted.
+- **100 points is anchored to a measured event**: The Odyssey's 1,199,464
+  views/day peak (2026-07-18). Superman 93, Avatar 90, Wicked 82. Don't retune
+  the anchor to make more titles look hot — the whole point is that an ordinary
+  trailer drop scores in the 40s-60s.
+- **Both dashboards must sort the buzz panel identically.** `ranked()` in
+  buzz.ts and the sort in `web/src/components/Buzz.tsx` are separate code; they
+  disagreed for one build and the React panel rendered visibly unordered.
+- **The heat palette is two colours for a measured reason.** red+amber clear
+  colourblind separation; red→orange→yellow→green does not (orange/yellow
+  normal-vision ΔE 13.6, red/green deutan ΔE 4.1). Validated with the dataviz
+  skill's `validate_palette.js` against this app's own surfaces — re-run it
+  before touching these values. Band colour always ships with the band's name
+  in text, because amber is sub-3:1 on the light ground.
 - **Don't reach for Reddit, X or Google Trends without re-probing.** All three
   were tested live and rejected — Reddit 403s unauthenticated, X needs a paid
   key, Google Trends' explore API 429s and its working RSS feed had zero

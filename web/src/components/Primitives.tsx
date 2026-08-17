@@ -75,6 +75,12 @@ const TAG_TONE = {
   /** Deliberately quieter than `hot`: a franchise-level match is a weaker
    * claim than a title-level one and shouldn't read as loud. */
   muted: 'border-line text-ink-3',
+  /** Heat bands, quiet -> exceptional. Never used without the number or the
+   * band's name beside them. */
+  band1: 'border-hot-1 text-hot-1 bg-hot-1/10',
+  band2: 'border-hot-2 text-hot-2 bg-hot-2/10',
+  band3: 'border-hot-3 text-hot-3 bg-hot-3/10',
+  band4: 'border-hot-4 text-hot-4 bg-hot-4/10',
 } as const
 
 export function Tag({
@@ -110,6 +116,7 @@ export function SignalRow({
   percent,
   badges,
   title,
+  tone = 'accent',
 }: {
   name: string
   score: string
@@ -117,21 +124,36 @@ export function SignalRow({
   percent: number
   badges?: ReactNode
   title?: string
+  /** Which heat band paints the number and the bar. Defaults to the neutral
+   * accent, so band colour only appears when a title has actually earned it. */
+  tone?: keyof typeof SIGNAL_TONE
 }) {
+  const paint = SIGNAL_TONE[tone]
   return (
     <div className="border-b border-line-soft py-2 text-[13px]" title={title}>
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 truncate font-[550]">{name}</span>
         {badges}
-        <span className="figure ml-auto text-xs text-accent">{score}</span>
+        <span className={`figure ml-auto text-xs ${paint.text}`}>{score}</span>
       </div>
       <div className="figure truncate text-[11px] text-ink-3">{detail}</div>
       <div className="mt-1.5 h-[3px] overflow-hidden rounded-sm bg-line">
         <div
-          className="h-full bg-accent"
+          className={`h-full ${paint.bg}`}
           style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
         />
       </div>
     </div>
   )
 }
+
+/** Written out in full rather than interpolated: Tailwind scans source for
+ * literal class names, so a `text-${tone}` template would be stripped from the
+ * build and the colour would silently vanish. */
+const SIGNAL_TONE = {
+  accent: { text: 'text-accent', bg: 'bg-accent' },
+  band1: { text: 'text-hot-1', bg: 'bg-hot-1' },
+  band2: { text: 'text-hot-2', bg: 'bg-hot-2' },
+  band3: { text: 'text-hot-3', bg: 'bg-hot-3' },
+  band4: { text: 'text-hot-4', bg: 'bg-hot-4' },
+} as const

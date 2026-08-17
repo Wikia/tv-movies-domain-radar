@@ -43,7 +43,14 @@ export interface Title {
  * measured against titles the same distance from release, so the release ramp
  * every title shares is already divided out. 1.0 is normal for its age. */
 export interface Buzz {
-  points: number // 0..100; 50 = normal, 65 = 2x, 80 = 4x, 100 = 10x+
+  /** 0..100 by the SIZE of the surge, anchored so 100 = The Odyssey's 1.2M
+   * views/day peak. An ordinary trailer drop lands in the 40s-60s. */
+  points: number
+  /** Colour band for `points` — a green -> yellow -> orange -> red ramp. Always
+   * rendered with the number beside it, never colour alone. */
+  band: 'exceptional' | 'strong' | 'notable' | 'quiet'
+  /** Daily views beyond what a title of this age would get anyway. */
+  excess: number
   recent: number
   baseline: number
   ratio: number
@@ -78,6 +85,9 @@ export interface TrendingWiki {
   name: string
   week: string
   trendingScore: number
+  /** Last week's score, or null if absent from last week's export — lets the UI
+   * say "16% → 85%" instead of an unlabelled velocity delta. */
+  priorScore: number | null
   velocity: number
   isNew: boolean
   fpScore: number
