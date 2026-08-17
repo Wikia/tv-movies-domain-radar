@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { Buzz } from './components/Buzz'
 import { Changes } from './components/Changes'
 import { Tile } from './components/Primitives'
+import { Trending } from './components/Trending'
 import { Schedule, type Filter } from './components/Schedule'
 import { ThemeToggle } from './components/ThemeToggle'
 import { formatTimestamp } from './lib/format'
@@ -97,6 +99,8 @@ export default function App() {
             active={filter === 'changed'}
             onClick={() => toggle('changed')}
           />
+          {data.buzz && <Tile label="Spiking" value={data.buzz.spiking} />}
+          {data.trending && <Tile label="Wikis trending" value={data.trending.wikis} />}
           <ThemeToggle />
         </div>
       </header>
@@ -109,7 +113,14 @@ export default function App() {
           onFilter={setFilter}
           reasons={reasons}
         />
-        <Changes changes={data.changes} />
+        {/* Buzz and Trending sit ABOVE the change log: the log runs to dozens
+            of rows on a busy day (mostly "dropped", which is audit trail rather
+            than news) and pushed both signal panels below the fold. */}
+        <div className="flex flex-col gap-11">
+          <Buzz titles={data.titles} coverage={data.buzz} total={data.counts.upcoming} />
+          <Trending report={data.trending} />
+          <Changes changes={data.changes} />
+        </div>
       </div>
 
       <section className="mt-12 border-t border-line pt-5 text-[13px] leading-relaxed text-ink-2">
@@ -120,11 +131,28 @@ export default function App() {
           since the previous run — that comes from diffing against our own stored snapshot, and it's
           a signal the upstream API doesn't expose.
         </p>
+        <p className="mt-2.5 max-w-[74ch]">
+          <b className="text-ink">Buzz</b> is Wikipedia pageviews for the title's own article,
+          scored against <i>its own</i> recent normal and then against what titles the same
+          distance from release are doing — so it measures unusual movement, not fame. 50 points is
+          normal, 65 is twice normal, 100 is 10×. <b className="text-ink">Rising</b> means at least
+          twice normal <i>and still climbing week over week</i>;{' '}
+          <b className="text-ink">fading</b> means still elevated, but the event has passed.
+        </p>
+        <p className="mt-2.5 max-w-[74ch]">
+          <b className="text-ink">Trending on Fandom</b> is our own weekly wiki traffic
+          {data.trending?.week ? ` (week of ${data.trending.week})` : ''}. A{' '}
+          <b className="text-ink">wiki hot</b> tag means the title's own wiki is trending;{' '}
+          <b className="text-ink">franchise hot</b> means its franchise hub is — which says the
+          franchise is drawing an audience, not this title. The side panel lists trending wikis
+          with <i>no</i> upcoming release behind them, which is where a back-catalog surge shows
+          up.
+        </p>
         <p className="mt-2.5 max-w-[74ch] text-ink-3">
           <span className="figure">MC</span> is the Metascore where one exists; most titles have
-          none before release, which is normal rather than missing data. This tool deliberately
-          carries no demand or popularity ranking — the available signals covered too few titles,
-          and none of the TV ones, to rank on honestly.
+          none before release, which is normal rather than missing data. The schedule is ordered by
+          date and nothing here ranks titles by demand — both signals are attached as labelled
+          evidence, and a title with no tag has <i>no signal</i> rather than a cold one.
         </p>
       </section>
     </div>

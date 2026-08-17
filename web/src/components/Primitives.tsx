@@ -70,6 +70,11 @@ export function Tile({
 const TAG_TONE = {
   up: 'border-up text-up',
   moved: 'border-moved text-moved bg-moved/10',
+  /** An attention signal firing — buzz spike, or a wiki trending. */
+  hot: 'border-accent text-accent bg-accent/10',
+  /** Deliberately quieter than `hot`: a franchise-level match is a weaker
+   * claim than a title-level one and shouldn't read as loud. */
+  muted: 'border-line text-ink-3',
 } as const
 
 export function Tag({
@@ -90,4 +95,43 @@ export function Tag({
 
 export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-3.5 text-sm text-ink-3">{children}</p>
+}
+
+/** One row in a signal panel: name, badges, headline number, a detail line and
+ * a bar. Shared by Buzz and Trending so the two read as one system — they
+ * answer the same question from different data and shouldn't look unrelated.
+ *
+ * `percent` must be driven by the SAME quantity as `score`. Showing one value
+ * and sizing the bar by another makes the ordering look arbitrary. */
+export function SignalRow({
+  name,
+  score,
+  detail,
+  percent,
+  badges,
+  title,
+}: {
+  name: string
+  score: string
+  detail: string
+  percent: number
+  badges?: ReactNode
+  title?: string
+}) {
+  return (
+    <div className="border-b border-line-soft py-2 text-[13px]" title={title}>
+      <div className="flex items-baseline gap-2">
+        <span className="min-w-0 truncate font-[550]">{name}</span>
+        {badges}
+        <span className="figure ml-auto text-xs text-accent">{score}</span>
+      </div>
+      <div className="figure truncate text-[11px] text-ink-3">{detail}</div>
+      <div className="mt-1.5 h-[3px] overflow-hidden rounded-sm bg-line">
+        <div
+          className="h-full bg-accent"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+        />
+      </div>
+    </div>
+  )
 }

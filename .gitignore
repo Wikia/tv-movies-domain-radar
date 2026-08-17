@@ -19,3 +19,12 @@ data/snapshots/*
 !data/snapshots/.gitkeep
 data/posters/*
 !data/posters/.gitkeep
+
+# The internal first-party trending export. Never committed and deliberately
+# given NO seeded fallback: a stale trending signal rendered as this week's is
+# worse than no signal at all, so each run pulls a fresh copy or goes without.
+data/fandom_trending.csv
+data/wiki-articles.json
+
+# Backtest pageview history — regenerable, delete to refetch.
+data/backtest-series.json

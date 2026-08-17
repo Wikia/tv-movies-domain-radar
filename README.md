@@ -55,8 +55,92 @@ which is a calendar fact wearing a score's clothing. Sorting by date and being
 honest about it beats a number that looks like evidence and isn't.
 
 The **diff is the real product**, and it's the one signal no upstream API
-exposes. A first-party Fandom trending signal is the thing worth adding — it
-would be the first demand measure covering TV *and* pre-release titles.
+exposes.
+
+That paragraph used to end "a first-party Fandom trending signal is the thing
+worth adding". It has since been added — see below — and it is deliberately
+**not** a score. Nothing ranks titles against each other; the wiki signal hangs
+off a title as labelled evidence with its own match confidence, and the schedule
+stays in date order.
+
+## The first-party trending signal
+
+Fandom's own weekly wiki traffic, from the internal **"Trending Data Workbook"**
+export (Snowflake `DB_CURATED.ENGAGEMENT.SECURE_VIEW_TRENDING_WIKIS`). This is
+the one demand measure that works here, because it is keyed on **wikis**, which
+exist long before a release does — which is exactly why it succeeds where the
+upstream trending feed failed.
+
+Each wiki row yields three things, and the composite `fpScore` (0..1) that
+orders them:
+
+| Field | Meaning |
+|---|---|
+| `trendingScore` | the level — how hot the wiki is this week (weight 0.85) |
+| `velocity` | week-over-week rise; only trusted when a prior week exists, since a prior of `0` nearly always means "absent last week" (weight 0.15) |
+| `isNew` | first week trending in the 8-week window — the strongest early signal, because an audience just *formed* (flat +0.05) |
+
+**Two outputs, and the second matters as much as the first:**
+
+- **Matched** — upcoming titles whose wiki is trending, tagged in place on the
+  schedule. Small by construction: on the first live run, 3 of 212.
+- **Unmapped** — trending wikis with *no* upcoming release behind them (57 of
+  59 on that run). This is the "are we missing something?" list, and for TV/film
+  it's arguably the more valuable half: a back-catalog show surging on a
+  streamer is invisible to a release calendar by construction.
+
+### Matching is strict, on purpose
+
+A wiki ties to a title on its **domain** (the strong anchor), franchise label,
+or installment label — but only by **exact** match or by one key **prefixing**
+the other, with prefixes needing 6+ characters. Both limits come from real false
+positives in the live export:
+
+- free substring matching tied *"The Musical"* to `sixthemusical.fandom.com` —
+  contained, but a coincidence of wording rather than a franchise;
+- a 4-character key let franchise *"Coco"* claim *"Cocomelon: The Movie"*.
+
+A wrong tie attributes real audience heat to the wrong title and nothing
+downstream would catch it, whereas a miss just lands in the unmapped panel for a
+human. So the trade is deliberately biased toward missing.
+
+Most matches come out as **`franchise`**, not `exact`, because most films have
+no wiki of their own — only a franchise hub. The UI says *"franchise hot"* for
+those and *"wiki hot"* only for an exact tie; that distinction is editorial, not
+cosmetic, and shouldn't be collapsed.
+
+### When it alerts
+
+The export is **weekly**; the radar runs **daily**. So a wiki merely trending at
+a steady level never alerts — that's a standing fact, true again tomorrow, and
+alerting on it would reproduce the same list every run until people stopped
+reading it. `wiki-trending` fires only when the wiki is **newly trending** or has
+**climbed** by at least `TRENDING.velocityAlert` (0.15), and only inside the same
+alert window as the date rules.
+
+### First-party data sync
+
+`data/fandom_trending.csv` is **not committed and has no seeded fallback** — a
+stale trending signal presented as this week's is worse than none.
+
+- **Via the `/radar` skill (default):** the agent pulls the sheet through the
+  **Google Drive MCP** (`download_file_content`, `fileId`
+  `1jQ6iuOxhSnZK674t-H7MLGI74oZSpHoDfMAHZ_kPlfc`, `exportMimeType=text/csv`) and
+  writes it verbatim to `data/fandom_trending.csv`. No credentials live in the
+  repo; the agent fetches, the pipeline just reads the file.
+- **Manual fallback:** open the workbook, **File → Download → Comma-separated
+  values** on the "Auto-refreshed trending" tab, and copy it into place. Faster
+  than fighting the MCP when it's slow.
+
+Without the file the pipeline still runs and says so — `trending` comes out
+`null`, which means *"we had no first-party signal"*, never *"nothing is
+trending"*. The dashboard renders that as missing input rather than a quiet
+week.
+
+The loader tolerates the sheet's raw formats directly: `trending_score` as
+either a float (`0.9579`) or a percent string (`"95.79%"`), and `vertical_labels`
+in either case (this one sheet carries both `tv` and `TV`, `movies` and
+`Movies` — matching case-sensitively would silently drop a tenth of the rows).
 
 ## Where the data comes from
 
@@ -82,6 +166,172 @@ All verified against the live API, not just read in the source:
 - **CORS is locked to `*.metacritic.com` / `*.tvguide.com`**, so a browser app
   can never call this API directly. The dashboard reads `out/radar.json` instead.
 
+## Buzz — the public-attention score
+
+Wikipedia pageviews for each title's own article, turned into a 0–100 score.
+This is the "point system" for what's actually being talked about, and it is
+built specifically to avoid the two failures that killed the original demand
+score:
+
+1. **It scores a title against itself, not against other titles.** Ranking by
+   absolute attention just rediscovers which franchises are famous. What's
+   actionable is a title departing from its *own* normal, so a mid-budget
+   thriller breaking out is visible next to a tentpole.
+2. **It removes the release ramp first.** Attention rises as a release
+   approaches for *every* title, so raw growth would flag the whole calendar in
+   release week — a calendar fact wearing a score's clothing, which is exactly
+   what the deleted score became. Each title is compared against the median
+   growth of titles at the same distance from release (`<=7`, `<=30`, `<=90`,
+   `<=365`, `far`), so only unusual movement survives. That also absorbs
+   anything that moves the whole calendar at once — a holiday, an outage.
+
+| Field | Meaning |
+|---|---|
+| `baseline` | median daily views over the previous 28 days |
+| `recent` | mean daily views over the most recent 3 days |
+| `ratio` | `recent / baseline` — raw growth |
+| `relative` | `ratio` ÷ the median ratio of its days-out cohort — the detrended figure, and the one to reason about |
+| `momentum` | `recent` ÷ median of the **7 days immediately before** it. >1 climbing, <1 falling |
+| `points` | `50 + 15·log₂(relative)`, clamped 0–100. **50 is normal**, 65 is 2×, 80 is 4×, 100 is 10×+ |
+| `phase` | `rising` (≥2× and climbing) · `fading` (≥2× but falling) · `flat` |
+| `spiking` | `phase === 'rising'` |
+
+Log-scaled because attention is multiplicative: 1,000 → 2,000 views is the same
+kind of event as 10,000 → 20,000, and a linear scale would disagree.
+
+**Why momentum exists.** A 28-day baseline has a long memory, so a title that
+peaked two weeks ago still scores as if it were spiking. *Wicker* went 500/day →
+73,000 → back down to 6,000 and was scoring 100 with the event plainly over.
+Momentum has a one-week memory, so it catches exactly that: the title is still
+elevated (`relative` high) but no longer climbing (`momentum` 0.37), and it's
+labelled `fading` instead of `spiking`. On a representative run this moved 4 of
+20 "spiking" titles into `fading`.
+
+**Why 15 points per doubling, not 25.** At 25 the scale hit its ceiling at only
+4×, and eight titles piled up on exactly 100 — discarding the ordering between a
+4× move and a 17× one. Panels rank on `relative`, which never saturates;
+`points` exists to be readable at a glance.
+
+**Calibration check** on a representative run of 139 scored titles: median
+`points` exactly **50**, median `relative` exactly **1.00**, 16 rising, 4 fading,
+119 flat. The per-cohort divisors show the release ramp is real and worth
+removing — titles ≤7 days out grow **1.59×** as a matter of course, ≤30 days
+**1.19×**, ≤365 days **0.93×**. Without detrending, imminent releases would
+dominate the list purely for being imminent.
+
+**Coverage is published, not implied.** On a representative run: 150 of 211
+titles resolved to a Wikipedia article, 138 had enough traffic and history to
+score, 19 were spiking. A title with no `buzz` has **no signal** — not a cold
+one — and the dashboard says so. Titles below `minBaselineViews` (50/day) are
+deliberately unscored: an article going 3 → 30 views is a 10× "spike" and pure
+noise.
+
+The schedule stays in date order. Buzz appears as its own panel plus a
+`spiking` tag on the handful of rows that earn it; only spiking titles are
+tagged, because tagging all 138 measured ones would make the marker meaningless.
+
+### Validation — `npm run backtest`
+
+The detector is backtested rather than eyeballed, because the original demand
+score shipped on plausibility and had to be torn out. `scripts/backtest.ts`
+imports the real `attach()` from `src/buzz.ts` — a reimplementation would
+validate a copy — replays it once per historical day over 120 days of real
+pageviews, and reports:
+
+```
+=== 1. ALERT VOLUME ===
+replayed 89 days over 150 titles
+rising per day — min 3, median 10, max 22
+
+=== 2. STABILITY ===
+distinct rising episodes: 198
+flickered off then back within 3d: 17 (9%)
+
+=== 3. HIT vs FALSE ALARM (first fire per title, +7d) ===
+judged 110 episodes
+  hit (still >=1.5x baseline):  96 (87%)
+  ambiguous:                     8 (7%)
+  false alarm (reverted):        6 (5%)
+
+=== 4. CONTROL — same test on days the detector stayed QUIET ===
+quiet (title, day) pairs: 9087
+  elevated anyway: 1592 (18%)
+
+LIFT: 87% vs 18% base rate = 5.0x better than firing at random
+```
+
+**The control is the number that matters.** 87% precision means nothing on its
+own — if quiet days were equally likely to be elevated a week later, the
+detector would be selecting noise. The base rate is 18%, so firing is **5×**
+better than random. Any change to the scoring should be judged by re-running
+this, not by whether the dashboard looks nicer.
+
+**Ground truth spot-check.** The three highest-scoring titles on 2026-08-17 all
+trace to a real, verifiable event on **2026-08-11**:
+
+| Title | Pageviews | Event |
+|---|---|---|
+| Verity | 3.1k → 31.9k/day | [Amazon MGM released the trailer](https://deadline.com/2026/08/verity-trailer-anne-hathaway-dakota-johnson-amazon-mgm-1236873939/) |
+| Josephine | 490 → 7.9k/day | [Sumerian released the first teaser](https://deadline.com/2026/08/josephine-trailer-release-date-gemma-chan-channing-tatum-1237031226/) |
+| Gentle Monster | 208 → 3.7k/day | [Netflix released the teaser](https://deadline.com/2026/08/gentle-monster-trailer-lea-seydoux-catherine-deneuve-1237030369/) |
+
+Three for three — and all on the same day, which is the honest explanation for
+why the board can look busy: **trailers drop in batches**, so the detector fires
+in clusters rather than evenly. That's the world being bursty, not the detector
+being noisy.
+
+**Known limits of this backtest:**
+
+- The +7d test measures *durability*, not whether a human would care. A spike
+  that decays slowly counts as a hit even if nobody acted on it.
+- 110 judged episodes over 150 titles is a small sample from one 4-month window.
+- The ground-truth check is 3 titles, chosen because they scored highest — that
+  is a precision check on the top of the list, not a recall check. Nothing here
+  measures what the detector **missed**.
+
+### Resolving titles to articles
+
+Strict, for the same reason wiki matching is. We search with the title, year and
+a type hint (`film` / `TV series`), take five candidates, strip a *trailing*
+parenthetical disambiguator, and require an exact match. Then any candidate that
+came back **bare** (no disambiguator) is checked against its Wikipedia
+categories and kept only if it's categorised as a film or show.
+
+Both steps are load-bearing:
+
+- Without the exact-match rule, `It Ends` resolved to `It Ends with Us (film)` —
+  a different, older movie sharing a prefix.
+- Without the category check, a title like `The Whisper Man` can resolve to a
+  **novel** of the same name and attribute a book's readership to a film.
+- Searching five while matching strictly beats searching one loosely: it's what
+  lets `It Ends` find its own article further down the list.
+
+The year+type hint does most of the work — it's why `Harry Potter` resolves to
+`Harry Potter (TV series)` and not the franchise hub.
+
+Resolutions are cached in `data/wiki-articles.json` (git-ignored). Hits are kept
+forever; **misses are retried after 7 days**, because an unreleased film often
+gains an article later.
+
+### Why Wikipedia and not Reddit / X / Google Trends
+
+All three were probed against the live APIs before this was built. None of them
+is usable here today:
+
+| Source | Result |
+|---|---|
+| **Reddit** | `HTTP 403` on every unauthenticated endpoint — search *and* plain listings. Needs a registered OAuth app (free) for a client ID/secret. **Viable if someone creates one.** |
+| **X** | No usable free tier; the cheapest API access that supports search is ~$200/month. Not probed — it can't work without a paid key. |
+| **Google Trends** | No official API. The `/trends/api/explore` endpoint returns `429` immediately without a browser token flow, and the realtime entertainment endpoint now `404`s. The daily-trends RSS *does* work keylessly — but it returns ~10 general search terms per region, and across US+GB those 20 terms had **zero** intersection with our 211 upcoming titles. Google Trends is also relative-normalized per request, so two titles queried separately aren't comparable without an anchor-term scheme. |
+
+Wikipedia won on the three things that matter: keyless, per-title, and it has
+~2 months of history available immediately — so the baseline exists on the
+**first** run rather than after a month of collecting.
+
+Reddit remains the best addition if it's wanted; the scoring layer is
+source-agnostic and a second, independent source would let a spike require
+corroboration before it's promoted.
+
 ## Changes and alerts
 
 Every run diffs against the previous snapshot:
@@ -91,6 +341,10 @@ Every run diffs against the previous snapshot:
 | `new` | Appeared on the calendar since the last run | yes |
 | `date-changed` | Release date moved | yes |
 | `removed` | Fell off "coming soon" | no — it usually just released |
+
+Plus one reason that doesn't come from the diff at all: **`wiki-trending`**, when
+a title's Fandom wiki is newly trending or climbing (see above). A title already
+on the calendar, unmoved, can still be the one whose audience just showed up.
 
 Changed titles are tagged **in place** in the schedule and reachable through the
 **Changed** filter; there's no separate section duplicating the same rows. They

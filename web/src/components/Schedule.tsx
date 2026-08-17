@@ -7,6 +7,7 @@ import {
   formatDate,
   formatMonth,
   groupByMonth,
+  isCalendarChange,
 } from '../lib/format'
 import type { AlertReason, MediaType, Title } from '../types'
 import { Poster } from './Poster'
@@ -62,7 +63,10 @@ export function Schedule({
       }
       if (title.daysOut != null && title.daysOut < 0) return false
       if ((filter === 'movie' || filter === 'show') && title.type !== filter) return false
-      if (filter === 'changed' && !reasons.has(title.id)) return false
+      // "Changed" means the CALENDAR changed. A title flagged only because its
+      // wiki is trending is alerted but not changed, and would otherwise show
+      // up here with no tag explaining why.
+      if (filter === 'changed' && !isCalendarChange(reasons.get(title.id))) return false
       if (term && !title.title.toLowerCase().includes(term)) return false
       return true
     })
@@ -162,15 +166,41 @@ function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
 
       <span className="min-w-0 truncate text-sm group-hover:text-accent">
         {title.title}
-        {reasons && reasons.length > 0 && (
-          <span className="ml-2 inline-flex gap-1 align-middle">
-            {reasons.map((reason) => (
+        <span className="ml-2 inline-flex gap-1 align-middle">
+          {/* Reasons with a blank label render nothing — see REASON_LABEL. */}
+          {(reasons ?? [])
+            .filter((reason) => REASON_LABEL[reason] !== '')
+            .map((reason) => (
               <Tag key={reason} tone={REASON_TONE[reason]}>
                 {REASON_LABEL[reason]}
               </Tag>
             ))}
-          </span>
-        )}
+
+          {/* Only SPIKING titles are tagged. Tagging all ~138 measured ones
+              would make the marker meaningless. */}
+          {title.buzz?.spiking && (
+            <Tag tone="hot">
+              <span
+                title={`Wikipedia views ${title.buzz.baseline}/day → ${title.buzz.recent}/day, ${title.buzz.relative}× vs similar titles, ${title.buzz.momentum}× week over week`}
+              >
+                rising
+              </span>
+            </Tag>
+          )}
+
+          {/* "franchise hot" is a weaker claim than "wiki hot" — the franchise
+              hub is drawing an audience, not necessarily this title. Kept
+              visually quieter so the two don't read alike. */}
+          {title.trend && (
+            <Tag tone={title.trend.match === 'exact' ? 'hot' : 'muted'}>
+              <span
+                title={`${title.trend.domain} · trending ${title.trend.trendingScore.toFixed(2)}`}
+              >
+                {title.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}
+              </span>
+            </Tag>
+          )}
+        </span>
       </span>
 
       <span className="text-[10.5px] tracking-wide text-ink-3 uppercase">

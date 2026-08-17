@@ -17,9 +17,17 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { ranked } from './buzz.js'
 import { ROOT } from './config.js'
 import { posterDataUri } from './posters.js'
-import type { Alert, AlertReason, Change, RadarOutput, Title } from './types.js'
+import type {
+  Alert,
+  AlertReason,
+  Change,
+  RadarOutput,
+  Title,
+  TrendingReport,
+} from './types.js'
 
 /** Keep the published page comfortably inside the 16 MB artifact cap. */
 const INLINE_BUDGET = 7_000_000
@@ -34,6 +42,10 @@ const ROW_CLASS = 'row'
 const REASON_LABEL: Record<AlertReason, string> = {
   'newly-added': 'new on calendar',
   'date-changed': 'date moved',
+  // The row already carries a wiki/franchise tag from title.trend, so this
+  // reason would render the same fact twice. Blank here, and the alert filter
+  // still finds the row via data-alert.
+  'wiki-trending': '',
 }
 
 function esc(value: string): string {
@@ -247,6 +259,19 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .chg .lbl.mv{color:var(--moved)}
 .chg .lbl.rm{color:var(--ink-3)}
 
+/* --- trending ---------------------------------------------------------- */
+.wiki{padding:8px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.wiki .wtop{display:flex;align-items:baseline;gap:8px}
+.wiki .wn{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wiki .ws{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--accent);font-variant-numeric:tabular-nums}
+.wiki .wd{font-family:var(--mono);font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Level bar. Purely a reading aid for the score already printed beside it —
+   it encodes nothing the number doesn't. */
+.bar{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.tag.hot{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
+.tag.fr{color:var(--ink-3)}
+
 /* --- method ----------------------------------------------------------- */
 .method{border-top:1px solid var(--line);padding-top:20px;font-size:13px;color:var(--ink-2);line-height:1.65}
 .method h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin:0 0 10px}
@@ -304,11 +329,27 @@ function renderSchedule(
         .map((t) => {
           const alert = alerted.get(t.id)
           const tags = (alert?.reasons ?? [])
+            .filter((reason) => REASON_LABEL[reason] !== '')
             .map(
               (reason) =>
                 `<span class="tag ${reason === 'newly-added' ? 'up' : 'moved'}">${esc(REASON_LABEL[reason])}</span>`,
             )
             .join('')
+          // A franchise-level tie says the franchise hub is hot, not this
+          // title — label it as such rather than letting it read as a
+          // title-level signal.
+          const wiki = t.trend
+            ? `<span class="tag ${t.trend.match === 'exact' ? 'hot' : 'fr'}" title="${esc(
+                `${t.trend.domain} · trending ${t.trend.trendingScore.toFixed(2)}`,
+              )}">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
+            : ''
+          // Only spiking titles get a row tag. Tagging all 138 measured titles
+          // would make the marker meaningless.
+          const spike = t.buzz?.spiking
+            ? `<span class="tag hot" title="${esc(
+                `Wikipedia views ${t.buzz.baseline}/day → ${t.buzz.recent}/day, ${t.buzz.relative}x vs similar titles`,
+              )}">rising</span>`
+            : ''
           const mc =
             t.criticScore != null
               ? `<span class="r mc">${t.criticScore}</span>`
@@ -318,7 +359,9 @@ function renderSchedule(
               data-type="${t.type}" data-alert="${alert ? 1 : 0}">
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
             ${poster(t, art.get(t.id) ?? null, 'thumb')}
-            <span class="t">${esc(t.title)}${tags ? `<span class="tags">${tags}</span>` : ''}</span>
+            <span class="t">${esc(t.title)}${
+              tags || wiki || spike ? `<span class="tags">${tags}${spike}${wiki}</span>` : ''
+            }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
             ${mc}
@@ -334,6 +377,75 @@ function renderSchedule(
     .join('')
 
   return header + body
+}
+
+/** 151556 -> "151.6k". The side column is 300px wide and full thousands
+ * separators pushed the domain line into an ellipsis, hiding the number the
+ * line exists to show. */
+function compact(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n)
+}
+
+/** The buzz panel: titles whose Wikipedia attention has broken away from their
+ * own normal. Ordered by points, which is the only ordering in this tool that
+ * ranks titles against each other — and it ranks them on *movement*, not fame,
+ * which is what keeps it out of the territory of the deleted demand score. */
+function renderBuzz(titles: Title[], coverage: RadarOutput['buzz']): string {
+  if (!coverage) return `<p class="empty">No attention data for this run.</p>`
+  const top = ranked(titles, 12)
+  if (top.length === 0) {
+    return `<p class="empty">Nothing measurable yet — ${coverage.resolved} of these titles have a Wikipedia article.</p>`
+  }
+  return top
+    .map((t) => {
+      const b = t.buzz!
+      // A fading title is still elevated but its event has passed, so it gets a
+      // quiet label rather than the same "spiking" badge as a live one.
+      const flag =
+        b.phase === 'rising'
+          ? `<span class="tag hot">rising</span>`
+          : b.phase === 'fading'
+            ? `<span class="tag fr">fading</span>`
+            : ''
+      return `<div class="wiki">
+        <div class="wtop"><span class="wn">${esc(t.title)}</span>${flag}
+        <span class="ws">${b.points}</span></div>
+        <div class="wd">${compact(b.baseline)} → ${compact(b.recent)}/day · ${b.relative}× vs similar · ${b.momentum}× wk</div>
+        <div class="bar"><i style="width:${b.points}%"></i></div>
+      </div>`
+    })
+    .join('')
+}
+
+/** The first-party panel: wikis our audience is hot on that have no upcoming
+ * release behind them. Deliberately the *unmapped* list — the matched ones are
+ * already tagged in place on the schedule, and repeating them here would just
+ * be the same rows twice. */
+function renderTrending(report: TrendingReport | null): string {
+  if (!report) {
+    return `<p class="empty">No first-party export for this run — so no wiki signal. That is missing input, not a quiet week.</p>`
+  }
+  if (report.unmapped.length === 0) {
+    return `<p class="empty">Every trending wiki this week ties to an upcoming release.</p>`
+  }
+  return report.unmapped
+    .map((w) => {
+      const flags = [
+        w.isNew ? `<span class="tag hot">new</span>` : '',
+        w.velocity > 0 ? `<span class="tag">+${w.velocity.toFixed(2)}</span>` : '',
+      ].join('')
+      // The bar and the number both show fpScore — the composite the list is
+      // ordered by. Showing the raw level here instead made the ordering read
+      // as arbitrary, since velocity moves the sort but wasn't on screen.
+      const pct = Math.round(w.fpScore * 100)
+      return `<div class="wiki">
+        <div class="wtop"><span class="wn">${esc(w.name)}</span>${flags}
+        <span class="ws">${w.fpScore.toFixed(2)}</span></div>
+        <div class="wd">${esc(w.domain)} · level ${w.trendingScore.toFixed(2)} · ${compact(w.pageviews14d)} views</div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+      </div>`
+    })
+    .join('')
 }
 
 function renderChanges(changes: Change[]): string {
@@ -465,6 +577,16 @@ function renderBody(data: RadarOutput, art: Art): string {
       <div class="tile"><b>${data.counts.inHorizon}</b><span>Next ${data.horizonDays} days</span></div>
       <div class="tile"><b>${data.counts.upcoming}</b><span>Upcoming</span></div>
       <div class="tile"><b>${data.counts.alerts}</b><span>Changed</span></div>
+      ${
+        data.buzz
+          ? `<div class="tile"><b>${data.buzz.spiking}</b><span>Spiking</span></div>`
+          : ''
+      }
+      ${
+        data.trending
+          ? `<div class="tile"><b>${data.trending.wikis}</b><span>Wikis trending</span></div>`
+          : ''
+      }
       <button id="theme" type="button" aria-label="Switch theme">◐ <span>Dark</span></button>
     </div>
   </header>
@@ -481,17 +603,44 @@ function renderBody(data: RadarOutput, art: Art): string {
       ${renderSchedule(data.titles, data.horizonDays, art, data.alerts)}
     </section>
 
-    <section>
-      <div class="shead"><h2>Since last run</h2><span class="aside">${data.changes.length}</span></div>
-      ${renderChanges(data.changes)}
-    </section>
+    <div>
+      <section>
+        <div class="shead"><h2>Buzz</h2><span class="aside">${
+          data.buzz ? `${data.buzz.spiking} spiking · ${data.buzz.scored} measured` : 'no data'
+        }</span></div>
+        ${renderBuzz(data.titles, data.buzz)}
+      </section>
+
+      <!-- Trending sits above the change log deliberately. The log runs to
+           dozens of rows on a busy day (mostly 'dropped', which is audit trail
+           rather than news), and it pushed this panel below the fold entirely. -->
+      <section>
+        <div class="shead"><h2>Trending on Fandom</h2><span class="aside">${
+          data.trending ? `no release attached · ${data.trending.unmappedTotal}` : 'no data'
+        }</span></div>
+        ${renderTrending(data.trending)}
+      </section>
+
+      <section>
+        <div class="shead"><h2>Since last run</h2><span class="aside">${data.changes.length}</span></div>
+        ${renderChanges(data.changes)}
+      </section>
+    </div>
   </div>
 
   <section class="method">
     <h3>How to read this</h3>
     <p>The full forward calendar of film and TV releases from the Metacritic catalog, in date order. <b>Changed</b> titles are ones added to the calendar or moved since the previous run — that comes from diffing against our own stored snapshot, and it is a signal the upstream API doesn't expose.</p>
+    <p><b>Trending on Fandom</b> is our own weekly wiki traffic${
+      data.trending?.week ? ` (week of ${esc(data.trending.week)})` : ''
+    }. A <b>wiki hot</b> tag means the title's own wiki is trending; <b>franchise hot</b> means its franchise hub is, which says the franchise is drawing an audience — not this title. The side panel lists trending wikis with <i>no</i> upcoming release behind them, which is where a back-catalog surge shows up.</p>
+    <p><b>Buzz</b> is Wikipedia pageviews for the title's own article, scored against <i>its own</i> recent normal and then against what titles the same distance from release are doing — so it measures unusual movement, not fame. 50 points is normal, 65 is twice normal, 100 is 10×. <b>Rising</b> means it is at least twice normal <i>and still climbing week over week</i>; <b>fading</b> means it is still elevated but the event has passed.${
+      data.buzz
+        ? ` Measured for ${data.buzz.scored} of ${data.counts.upcoming} titles — the rest have no article or too little traffic to read, which is <i>no signal</i> rather than a cold one.`
+        : ''
+    }</p>
     <p><code>MC</code> is the Metascore where one exists; most titles have none before release, which is normal rather than missing data.</p>
-    <p style="color:var(--ink-3)">Data: neutron-api (metacritic). This tool deliberately carries no demand or popularity ranking — the available signals covered too few titles, and none of the TV ones, to rank on honestly.</p>
+    <p style="color:var(--ink-3)">Data: neutron-api (metacritic) and Fandom's internal trending export. The schedule is ordered by date and nothing here ranks titles by demand — the wiki signal is attached as labelled evidence, and a title with no tag has no signal rather than a cold one.</p>
   </section>
 
 </div></div>`
