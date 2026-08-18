@@ -4,14 +4,6 @@ import { Poster } from './Poster'
 import { Tag } from './Primitives'
 import { SourceBadges } from './SourceBadges'
 
-/** Everything currently trending, and what each verdict rests on.
- *
- * The schedule answers "what's coming"; this answers "what's hot", which is a
- * different question and was previously only answerable by reading a number out
- * of a sidebar. Confirmed titles lead, because two independent sources agreeing
- * is a materially stronger claim than one — that distinction is the whole reason
- * for collecting more than one source.
- */
 export function TrendingPage({
   titles,
   onOpen,
@@ -26,14 +18,13 @@ export function TrendingPage({
     .sort((a, b) => {
       const byCount = b.attention!.rising.length - a.attention!.rising.length
       if (byCount !== 0) return byCount
-      // Then by the strongest single reading, so the loudest event leads.
+
       const strength = (t: Title): number =>
         Math.max(...t.attention!.sources.map((s) => s.relative))
       return strength(b) - strength(a)
     })
 
   const confirmed = trending.filter((t) => t.attention!.confirmed)
-  const anyMock = trending.some((t) => t.attention!.mock)
 
   return (
     <div className="mx-auto max-w-[1140px] px-7 py-10">
@@ -44,14 +35,6 @@ export function TrendingPage({
       >
         ← Back to the radar
       </button>
-
-      {anyMock && (
-        <div className="mb-6 rounded-lg border border-hot-2 bg-hot-2/10 px-4 py-2.5 text-[13px] text-ink-2">
-          <b className="text-hot-2">Demo data.</b> Some readings behind these verdicts were
-          generated, not observed — YouTube, TMDB and Google News have no history endpoint, so
-          their real series are still accruing.
-        </div>
-      )}
 
       <header className="mb-7">
         <h1 className="text-[clamp(24px,3.6vw,34px)] leading-tight font-[650] tracking-tight">

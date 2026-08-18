@@ -8,21 +8,15 @@ const META: Record<Change['kind'], { label: string; tone: string }> = {
   removed: { label: 'Dropped', tone: 'text-ink-3' },
 }
 
-/** Capped shorter than the schedule's box so the sidebar ends near it: most of
- * this list is "dropped", which is audit trail rather than news, and letting 40
- * rows run full height left a long empty gutter beside the schedule. */
 const SCROLL = 'max-h-[18rem] overflow-y-auto pr-2 [scrollbar-gutter:stable]'
 
-/** Everything that shifted since the previous run, including the quiet ones
- * that don't raise an alert — the audit trail behind the Changed filter. */
 export function Changes({
   changes,
   known,
   onOpen,
 }: {
   changes: Change[]
-  /** Title ids still on the calendar. A 'dropped' change has no title left to
-   * open, so those stay plain text rather than becoming a dead link. */
+
   known: Set<number>
   onOpen: (id: number) => void
 }) {

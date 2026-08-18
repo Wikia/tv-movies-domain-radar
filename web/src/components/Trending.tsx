@@ -1,19 +1,6 @@
 import type { TrendingReport } from '../types'
 import { Empty, Section, SignalRow, Tag } from './Primitives'
 
-/** Fandom wikis our own audience is reading heavily this week that have NO
- * upcoming release behind them.
- *
- * Deliberately the unmapped half of the signal: titles that DID match a
- * trending wiki are already tagged in place on the schedule, so repeating them
- * here would be the same rows twice. For TV and film this list is arguably the
- * more valuable half — a back-catalogue show surging on a streamer is invisible
- * to a release calendar by construction.
- *
- * Everything is phrased as a sentence. The earlier version printed
- * "0.83 · level 0.85 · +0.69" — the raw export's vocabulary, three unlabelled
- * decimals that look like the same kind of number and aren't.
- */
 export function Trending({ report }: { report: TrendingReport | null }) {
   return (
     <Section

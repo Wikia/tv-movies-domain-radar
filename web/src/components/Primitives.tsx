@@ -1,8 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react'
 
-/** Section header. The fixed height is load-bearing: the schedule carries
- * inline controls and the sidebar doesn't, and without a shared header height
- * the two columns start on different lines. */
 export function Section({
   title,
   aside,
@@ -26,9 +23,6 @@ export function Section({
   )
 }
 
-/** A stat tile. With `onClick` it doubles as a filter control — the count and
- * the thing it counts are the same idea, so clicking the number to see those
- * rows is the obvious gesture. */
 export function Tile({
   label,
   value,
@@ -70,13 +64,9 @@ export function Tile({
 const TAG_TONE = {
   up: 'border-up text-up',
   moved: 'border-moved text-moved bg-moved/10',
-  /** An attention signal firing — buzz spike, or a wiki trending. */
   hot: 'border-accent text-accent bg-accent/10',
-  /** Deliberately quieter than `hot`: a franchise-level match is a weaker
-   * claim than a title-level one and shouldn't read as loud. */
+
   muted: 'border-line text-ink-3',
-  /** Heat bands, quiet -> exceptional. Never used without the number or the
-   * band's name beside them. */
   band1: 'border-hot-1 text-hot-1 bg-hot-1/10',
   band2: 'border-hot-2 text-hot-2 bg-hot-2/10',
   band3: 'border-hot-3 text-hot-3 bg-hot-3/10',
@@ -103,12 +93,6 @@ export function Empty({ children }: { children: ReactNode }) {
   return <p className="py-3.5 text-sm text-ink-3">{children}</p>
 }
 
-/** One row in a signal panel: name, badges, headline number, a detail line and
- * a bar. Shared by Buzz and Trending so the two read as one system — they
- * answer the same question from different data and shouldn't look unrelated.
- *
- * `percent` must be driven by the SAME quantity as `score`. Showing one value
- * and sizing the bar by another makes the ordering look arbitrary. */
 export function SignalRow({
   name,
   score,
@@ -126,19 +110,15 @@ export function SignalRow({
   percent: number
   badges?: ReactNode
   title?: string
-  /** Which heat band paints the number and the bar. Defaults to the neutral
-   * accent, so band colour only appears when a title has actually earned it. */
+
   tone?: keyof typeof SIGNAL_TONE
-  /** Makes the row open its detail page. */
+
   onClick?: () => void
-  /** Makes the row an outbound link instead — used by trending wikis, which
-   * have no title behind them to open, only the wiki itself. */
+
   href?: string
 }) {
   const paint = SIGNAL_TONE[tone]
-  // The title gets the size, and the supporting figures wrap onto their own
-  // lines rather than being cut off by an ellipsis — a truncated wiki name is
-  // unreadable, and the numbers under it are the whole point of the row.
+
   const interactive = Boolean(onClick || href)
   const Wrapper = href ? 'a' : 'div'
   return (
@@ -171,9 +151,6 @@ export function SignalRow({
   )
 }
 
-/** Written out in full rather than interpolated: Tailwind scans source for
- * literal class names, so a `text-${tone}` template would be stripped from the
- * build and the colour would silently vanish. */
 const SIGNAL_TONE = {
   accent: { text: 'text-accent', bg: 'bg-accent' },
   band1: { text: 'text-hot-1', bg: 'bg-hot-1' },

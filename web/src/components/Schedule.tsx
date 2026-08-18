@@ -13,7 +13,6 @@ import type { AlertReason, MediaType, Title } from '../types'
 import { Poster } from './Poster'
 import { Empty, Section, Tag } from './Primitives'
 
-/** Filters are shared with the stat tiles in App, so they live in one type. */
 export type Filter = 'all' | MediaType | 'changed'
 
 const FILTERS: Array<{ id: Filter; label: string }> = [
@@ -30,27 +29,13 @@ const FILTER_ASIDE: Record<Filter, string> = {
   show: 'TV only',
 }
 
-/** One column template shared by the header and every row — the only way the
- * two stay aligned. Genres and countdown drop out on narrow screens. */
 const COLS =
   'grid grid-cols-[64px_28px_1fr_40px_40px] items-center gap-x-3 ' +
   'sm:grid-cols-[64px_28px_1fr_40px_40px_88px] ' +
   'lg:grid-cols-[64px_28px_1fr_40px_128px_40px_88px]'
 
-/** The schedule's scroll box.
- *
- * `pr-3` and `scrollbar-gutter:stable` are not cosmetic: the grid's last column
- * (the countdown) is right-aligned to the container edge, and an overlay
- * scrollbar sat directly on top of it. The gutter reserves the space whether or
- * not the bar is visible, so rows don't shift when it appears.
- *
- * Height is set to sit roughly level with the rail (Buzz, Trending, the change
- * log) rather than to fill the viewport — if the two columns end far apart the
- * page has a long empty gutter down one side. */
 const SCROLL = 'max-h-[62rem] overflow-y-auto pr-3 [scrollbar-gutter:stable]'
 
-/** Band -> text colour for the inline score. Written out in full because
- * Tailwind scans for literal class names. */
 const BAND_TEXT = {
   exceptional: 'text-hot-1',
   strong: 'text-hot-2',
@@ -79,16 +64,12 @@ export function Schedule({
   const visible = useMemo(() => {
     const term = query.trim().toLowerCase()
     return titles.filter((title) => {
-      // Changed titles are the exception to the horizon: one matters however
-      // far out it sits.
       if (filter !== 'changed' && !showAll) {
         if (title.daysOut == null || title.daysOut > horizonDays) return false
       }
       if (title.daysOut != null && title.daysOut < 0) return false
       if ((filter === 'movie' || filter === 'show') && title.type !== filter) return false
-      // "Changed" means the CALENDAR changed. A title flagged only because its
-      // wiki is trending is alerted but not changed, and would otherwise show
-      // up here with no tag explaining why.
+
       if (filter === 'changed' && !isCalendarChange(reasons.get(title.id))) return false
       if (term && !title.title.toLowerCase().includes(term)) return false
       return true
@@ -192,8 +173,6 @@ function Row({
   reasons?: AlertReason[]
   onOpen: (id: number) => void
 }) {
-  // A row now leads to the evidence rather than off to Metacritic — the
-  // outbound link lives on the detail page, where there's room to label it.
   return (
     <a
       href={`/title/${title.id}`}
@@ -208,13 +187,11 @@ function Row({
 
       <Poster title={title} className="w-7 rounded-[3px]" textClass="text-[8px]" />
 
-      {/* The title truncates; the badges must not. They used to live inside the
-          truncating span, so a long title silently ate the "new on calendar"
-          tag and the buzz score — the two things the row exists to flag. */}
+      {}
       <span className="flex min-w-0 items-center gap-2 text-sm group-hover:text-accent">
         <span className="truncate">{title.title}</span>
         <span className="flex shrink-0 items-center gap-1">
-          {/* Reasons with a blank label render nothing — see REASON_LABEL. */}
+          {}
           {(reasons ?? [])
             .filter((reason) => REASON_LABEL[reason] !== '')
             .map((reason) => (
@@ -223,15 +200,11 @@ function Row({
               </Tag>
             ))}
 
-          {/* Only SPIKING titles are tagged. Tagging all ~138 measured ones
-              would make the marker meaningless. */}
-          {/* Buzz lives in its own column now — see below. Nothing here. */}
+          {}
+          {}
 
-          {/* "franchise hot" is a weaker claim than "wiki hot" — the franchise
-              hub is drawing an audience, not necessarily this title. Kept
-              visually quieter so the two don't read alike. */}
-          {/* How many independent sources agree. The count is the point: one
-              source rising is a lead, several is an event. */}
+          {}
+          {}
           {title.attention && title.attention.rising.length > 0 && (
             <Tag tone="muted">
               <span title={`rising in: ${title.attention.rising.join(', ')}`}>
@@ -259,11 +232,7 @@ function Row({
         {title.genres.slice(0, 2).join(', ') || '—'}
       </span>
 
-      {/* Buzz replaced the Metascore column: most upcoming titles have no
-          Metascore, so it was a column of dashes, and the buzz number is the
-          thing worth scanning down. Rising titles are emphasised; measured but
-          static ones stay quiet. An explicit dash means "not measured" — NOT
-          "cold" — which the tooltip says outright. */}
+      {}
       {title.buzz ? (
         <span
           className={`figure text-right text-xs ${

@@ -1,32 +1,3 @@
-/** TMDB popularity and vote counts.
- *
- * Like YouTube, TMDB reports only what is true now, so the series exists only
- * because we record it — nothing usable on day one, a baseline after about a
- * week.
- *
- * TWO METRICS, and which one matters depends on where the title is:
- *
- *  - `popularity` is a proprietary composite whose inputs include *the previous
- *    day's popularity*, so it is smoothed by construction and drifts where the
- *    other sources spike. It is nonetheless **the only TMDB metric that moves
- *    before release**, which is the whole of this radar's remit.
- *  - `voteCount` is a plain cumulative counter and much the more interpretable
- *    of the two — but it is **0 until a title is released**. Verity, out in
- *    September, sits at 0 votes with popularity 13; released titles like
- *    Weapons carry thousands. So it is worth recording (it becomes the better
- *    signal the moment a title lands) and worth nothing before then.
- *
- * Both are stored. Score popularity pre-release, votes after.
- *
- * One risk worth naming: TMDB has changed the popularity formula before, which
- * moves every title at once. The buzz detector is already immune — it divides
- * each title's ratio by the median ratio of its days-out cohort, so anything
- * that shifts the whole population cancels. That guard was built for the
- * release ramp and happens to cover this too.
- *
- * Licensing: free for non-commercial use with attribution. Commercial use needs
- * a licence from TMDB — see README before this goes anywhere user-facing.
- */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -72,23 +43,8 @@ interface SearchHit {
   first_air_date?: string
 }
 
-/** How far apart our release date and TMDB's may be and still be the same film.
- *
- * Wide, because festival and territory dates legitimately differ by weeks — but
- * far tighter than the year tolerance this started with. That version matched
- * our "Colony" (28 Aug 2026) to a *different* 2026 film released on 21 May,
- * which already had 528 votes: both are 2026, so a year check waved it through.
- * Two unrelated films sharing a title and a year is exactly the case that needs
- * catching. */
 const DATE_TOLERANCE_DAYS = 60
 
-/** Resolve a title to a TMDB id.
- *
- * Same strictness as every other resolver here: the name must match exactly
- * once normalised, and the dates must be close enough to be the same release.
- * Where one side has no date we fall back to the year, which still stops
- * "Cliffhanger" the 1993 film being taken for the 2026 one.
- */
 async function search(title: Title): Promise<number | null> {
   const kind = title.type === 'movie' ? 'movie' : 'tv'
   const year = title.releaseDate?.slice(0, 4)
@@ -107,9 +63,8 @@ async function search(title: Title): Promise<number | null> {
   return null
 }
 
-/** Are two release dates close enough to be the same release? */
 function sameRelease(ours: string | null, theirs: string | null): boolean {
-  if (!ours || !theirs) return true // nothing to compare on — let the name stand
+  if (!ours || !theirs) return true
   const apart = Math.abs(Date.parse(`${ours}T00:00:00Z`) - Date.parse(`${theirs}T00:00:00Z`))
   if (Number.isNaN(apart)) return true
   return apart <= DATE_TOLERANCE_DAYS * 86_400_000
@@ -139,7 +94,7 @@ export async function resolveIds(titles: Title[], today: Date): Promise<Cache> {
   )
   needed.forEach((title, i) => {
     const result = found[i]
-    if (result === 'failed') return // retry next run rather than cache a wrong miss
+    if (result === 'failed') return
     cache[cacheKey(title)] = { tmdbId: result ?? null, checked: todayKey }
   })
 
@@ -154,13 +109,12 @@ interface Details {
   vote_average?: number
 }
 
-export interface TmdbResult {
+interface TmdbResult {
   readings: SignalStore
   resolved: number
   polled: number
 }
 
-/** Record today's popularity and vote counts for every resolved title. */
 export async function collect(titles: Title[], today: Date, cache: Cache): Promise<TmdbResult> {
   const targets = titles
     .map((title) => ({ title, id: cache[cacheKey(title)]?.tmdbId ?? null }))

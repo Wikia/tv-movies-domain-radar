@@ -4,18 +4,6 @@ import { Poster } from './Poster'
 import { Tag } from './Primitives'
 import { SourceBadges } from './SourceBadges'
 
-/** Where a title is trending, source by source.
- *
- * The list view can only afford a verdict; this is the evidence behind it. It
- * exists because "confirmed" is a claim, and a claim the reader can't inspect
- * is one they have to take on faith — which is exactly what got the original
- * demand score deleted.
- *
- * Every source is shown, including the ones that DISAGREE. A title rising on
- * YouTube and flat on Wikipedia is a different and more interesting fact than a
- * title rising everywhere, and hiding the flat rows would turn a disagreement
- * into an unearned consensus.
- */
 export function TitleDetail({ title, onBack }: { title: Title; onBack: () => void }) {
   const attention = title.attention
 
@@ -29,8 +17,6 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
         ← Back to the radar
       </button>
 
-      {attention?.mock && <MockBanner />}
-
       <header className="mb-8 flex flex-wrap items-start gap-5">
         <Poster title={title} className="w-24 shrink-0 rounded-lg" textClass="text-2xl" />
         <div className="min-w-0">
@@ -42,9 +28,7 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
             {title.daysOut != null && title.daysOut >= 0 && ` · in ${title.daysOut} days`}
           </p>
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-            {/* Deliberately not a heat colour: the ramp owns red-to-green for
-                magnitude, and source agreement is a different dimension. Two
-                meanings for one colour would dilute both. */}
+            {}
             {attention?.confirmed && (
               <Tag tone="hot">confirmed · {attention.rising.length} sources</Tag>
             )}
@@ -142,9 +126,6 @@ const SOURCE_LABEL: Record<SourceSignal['source'], string> = {
   tmdb: 'TMDB',
 }
 
-/** What the numbers mean, in the source's own units — because "views",
- * "articles" and "popularity" are not the same kind of thing and a shared label
- * would imply they are. */
 const METRIC_LABEL: Record<string, string> = {
   views: 'views/day',
   articles: 'articles/day',
@@ -168,16 +149,6 @@ function SourceRow({ signal }: { signal: SourceSignal }) {
         </b>
         <span className="text-ink-3"> vs similar · {signal.momentum}× wk · {signal.days}d</span>
       </span>
-    </div>
-  )
-}
-
-function MockBanner() {
-  return (
-    <div className="mb-6 rounded-lg border border-hot-2 bg-hot-2/10 px-4 py-2.5 text-[13px] text-ink-2">
-      <b className="text-hot-2">Demo data.</b> Some readings behind this verdict were generated,
-      not observed — YouTube, TMDB and Google News have no history endpoint, so their real series
-      are still accruing. Anything here is illustrative until they mature.
     </div>
   )
 }

@@ -1,22 +1,5 @@
 #!/usr/bin/env node
-/** Thin server: the dashboard's only origin.
- *
- * The browser talks exclusively to this process, never to neutron-api. That
- * matters for three reasons:
- *   - The diff ("new on the calendar", "date moved") needs yesterday's snapshot.
- *     A browser has no yesterday; only a server process can hold that state.
- *   - CORS: neutron-api only allows *.metacritic.com / *.tvguide.com origins,
- *     and this is a standalone internal tool.
- *
- * Deliberately built on node:http with NO dependencies — the pipeline is
- * dependency-free and the server should not be the thing that breaks that.
- *
- * Routes:
- *   GET /api/radar            -> the diffed calendar (out/radar.json)
- *   GET /thumbs/<id>.jpg      -> cached poster art (data/posters)
- *   GET /health               -> liveness probe for k8s
- *   GET /*                    -> the built React app (web/dist)
- */
+
 import { createReadStream } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import http from 'node:http'
@@ -52,7 +35,6 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload)
 }
 
-/** The calendar the pipeline wrote. 404s with a useful hint before a first run. */
 async function serveRadar(res: http.ServerResponse): Promise<void> {
   try {
     const body = await readFile(RADAR_JSON, 'utf8')
@@ -70,8 +52,6 @@ async function serveRadar(res: http.ServerResponse): Promise<void> {
   }
 }
 
-/** Cached poster thumbnail. Content-addressed by catalog id, so it can be
- * cached hard by the browser. */
 async function serveThumb(res: http.ServerResponse, id: string): Promise<void> {
   const file = path.join(POSTER_CACHE_DIR, `${id}.jpg`)
   try {
@@ -88,12 +68,9 @@ async function serveThumb(res: http.ServerResponse, id: string): Promise<void> {
   createReadStream(file).pipe(res)
 }
 
-/** Static file serving for the built SPA, with traversal protection. */
 async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<void> {
   const requested = path.normalize(path.join(WEB_DIST, urlPath))
-  // Never serve outside the dist root, whatever the request looks like. The
-  // separator matters: a bare startsWith(WEB_DIST) would also accept a SIBLING
-  // directory such as `web/dist-evil`, since that string starts with `web/dist`.
+
   const inside = requested === WEB_DIST || requested.startsWith(WEB_DIST + path.sep)
   const target = inside ? requested : WEB_DIST
 
@@ -102,7 +79,6 @@ async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<v
     const info = await stat(filePath)
     if (info.isDirectory()) filePath = path.join(filePath, 'index.html')
   } catch {
-    // Unknown path -> SPA fallback so client-side routing works.
     filePath = path.join(WEB_DIST, 'index.html')
   }
 
@@ -115,7 +91,7 @@ async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<v
   }
 
   const type = MIME[path.extname(filePath)] ?? 'application/octet-stream'
-  // Hashed assets are immutable; index.html must always be revalidated.
+
   const cache = filePath.endsWith('index.html')
     ? 'no-cache'
     : 'public, max-age=31536000, immutable'
@@ -142,8 +118,6 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  // Cached poster art. The id pattern is strict, so nothing outside the cache
-  // directory is reachable through this route.
   const thumb = route.match(/^\/thumbs\/(\d+)\.jpg$/)
   if (thumb?.[1]) {
     void serveThumb(res, thumb[1])
@@ -159,6 +133,5 @@ const server = http.createServer((req, res) => {
 })
 
 server.listen(PORT, () => {
-  console.log(`tv-movies radar server -> http://localhost:${PORT}`)
-  console.log(`  upstream: ${API_BASE}`)
+  process.stdout.write(`tv-movies radar -> http://localhost:${PORT} (upstream ${API_BASE})\n`)
 })

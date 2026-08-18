@@ -14,7 +14,7 @@ Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
   export. Not committed, no fallback; the `/radar` skill pulls it fresh each run.
 - **Signals:** two, both attached rather than blended — `title.trend` (our own
   wiki traffic) and `title.buzz` (Wikipedia pageviews vs the title's own normal).
-- **Flags:** `--horizon N`, `--top N`, `--today YYYY-MM-DD`.
+- **Flags:** `--horizon N`, `--today YYYY-MM-DD`.
 - **Check:** `npm run typecheck`, `npm run web:build`.
 - **`npm run typecheck` does NOT cover `web/`.** The React app is typechecked by
   its own `tsc -b`, which runs as part of `npm run web:build`. So a broken
@@ -188,11 +188,6 @@ into one number — you have rebuilt the thing that was deleted.
 - **YouTube views are cumulative and must be differenced** before scoring; news
   articles and TMDB popularity are already rates. Getting this backwards
   produces nonsense either way.
-- **Mock readings carry `mock: 1`** and that flag must keep reaching the UI. A
-  demo that can pass for evidence is worse than no demo.
-- **Mock history must anchor to real readings** — integrate cumulative counters
-  backwards from the earliest real total. Splicing naively created a 419x fake
-  surge at the seam.
 - **The detail page shows dissenting sources on purpose.** Hiding the flat rows
   would turn a disagreement into an unearned consensus.
 - **Don't reach for Reddit, X or Google Trends without re-probing.** All three

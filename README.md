@@ -17,7 +17,7 @@ neutron-api ─▶ fetch coming-soon calendar
 ```bash
 npm install
 npm run radar                          # full run, writes out/radar.json
-npm run radar -- --horizon 60 --top 15 # narrower window, longer printout
+npm run radar -- --horizon 60          # narrower window
 npm run radar -- --today 2026-08-12    # pin the date for a reproducible run
 ```
 
@@ -557,23 +557,6 @@ consensus.
 `confirmed` is a claim; the detail page is the evidence behind it. A claim the
 reader can't inspect is one they have to take on faith, which is what got the
 original score deleted.
-
-### Demo data
-
-`npm run mock:signals` fabricates ~35 days of history for the three snapshot
-sources, correlated with what Wikipedia already says is rising, so the
-end-to-end behaviour can be seen before the real series mature (~4 weeks).
-
-- Every generated reading carries **`mock: 1`**, which survives into the scoring
-  and is surfaced as a banner on the dashboard and every detail page.
-- **Real readings are never overwritten** — only missing days are filled.
-- Mock history is *anchored* to real readings: cumulative counters are
-  integrated backwards from the earliest real total, levels are rescaled to the
-  real median. Without that the seam is a cliff — the first attempt spliced a
-  made-up YouTube total onto a genuine 34M-view count and scored the joint as a
-  419× surge.
-
-`npm run mock:signals -- --reset` drops generated readings and rebuilds them.
 
 ## Changes and alerts
 

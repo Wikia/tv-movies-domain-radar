@@ -15,8 +15,7 @@
     "web:install": "npm --prefix web install",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
-    "dashboard": "npm run radar && npm run web:build && npm run serve",
-    "mock:signals": "node --env-file-if-exists=.env --import tsx scripts/mock-signals.ts"
+    "dashboard": "npm run radar && npm run web:build && npm run serve"
   },
   "devDependencies": {
     "@types/node": "^20.17.9",

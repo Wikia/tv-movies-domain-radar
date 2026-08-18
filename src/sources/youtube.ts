@@ -1,20 +1,3 @@
-/** Trailer statistics, from the YouTube Data API.
- *
- * YouTube reports only LIFETIME totals — there is no history endpoint — so a
- * daily series exists only because we record one. Nothing useful comes out on
- * the first run; a baseline takes about a week (see SIGNALS.minHistoryDays),
- * and that is inherent to the source rather than a shortcoming here.
- *
- * What IS available immediately is the trailer's `publishedAt`: a timestamped,
- * verifiable cause. "Verity +28.7k/day" becomes "Verity +28.7k/day, trailer
- * published Aug 11", which is the half of the sentence the dashboard currently
- * can't say.
- *
- * Quota shape (10,000 units/day free) is why resolution is cached forever:
- *   search.list  100 units — once per title, ever
- *   videos.list    1 unit  — batched 50 at a time, so a full daily poll of the
- *                            calendar costs about 5 units
- */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -27,8 +10,6 @@ import { pooled } from './wikipedia.js'
 const API = 'https://www.googleapis.com/youtube/v3'
 const CACHE_FILE = path.join(ROOT, 'data', 'youtube-videos.json')
 
-/** What we remember per title. `null` records "searched, found nothing
- * convincing" so we don't burn 100 quota units on it every run. */
 interface CacheEntry {
   videoId: string | null
   publishedAt?: string
@@ -57,14 +38,6 @@ interface SearchItem {
   snippet: { title: string; channelTitle: string; publishedAt: string }
 }
 
-/** Find the official trailer for a title.
- *
- * Deliberately strict, for the reason every resolver in this project is
- * strict: a reaction video or fan edit would attach somebody else's audience to
- * the title, and nothing downstream would catch it. We require the video title
- * to contain the film's name AND to look like a trailer, and prefer channels
- * that look like a distributor rather than an aggregator.
- */
 async function findTrailer(title: Title): Promise<SearchItem | null> {
   const year = title.releaseDate?.slice(0, 4) ?? ''
   const params = new URLSearchParams({
@@ -83,23 +56,13 @@ async function findTrailer(title: Title): Promise<SearchItem | null> {
     return videoTitle.includes(wanted) && /trailer|teaser/i.test(item.snippet.title)
   })
 
-  // Prefer the distributor's upload over an aggregator's re-upload. Searching
-  // "Verity 2026 official trailer" returns the real Amazon MGM Studios trailer
-  // alongside two re-uploads with near-identical titles; picking on API order
-  // alone would be picking on relevance, which is not authority. Re-uploads
-  // also carry their own view counts, so choosing one attributes a
-  // reaction-channel's audience to the film.
   const official = candidates.find((item) => !AGGREGATOR.test(item.snippet.channelTitle))
   return official ?? candidates[0] ?? null
 }
 
-/** Channel names that are usually re-uploaders rather than rights holders. Not
- * exhaustive and not meant to be — the resolved channel is stored in the cache
- * so a wrong pick is visible and correctable. */
 const AGGREGATOR =
   /trailer|clips?|media|movie(s)?\b|cinema|fresh|source|fan|concept|zone|hub|access/i
 
-/** Resolve trailers for titles we haven't looked up yet, updating the cache. */
 export async function resolveTrailers(titles: Title[], today: Date): Promise<Cache> {
   const raw = await readFile(CACHE_FILE, 'utf8').catch(() => '{}')
   let cache: Cache = {}
@@ -111,8 +74,7 @@ export async function resolveTrailers(titles: Title[], today: Date): Promise<Cac
   if (!YOUTUBE_KEY) return cache
 
   const todayKey = isoDay(today)
-  // Misses are retried on the same cadence as Wikipedia's: an unreleased film
-  // often has no trailer yet and gets one later.
+
   const staleBefore = isoDay(new Date(today.getTime() - 7 * 86_400_000))
   const needed = titles.filter((title) => {
     const hit = cache[cacheKey(title)]
@@ -121,9 +83,6 @@ export async function resolveTrailers(titles: Title[], today: Date): Promise<Cac
   })
   if (needed.length === 0) return cache
 
-  // search.list is 100 units a call, so this is the expensive half of the
-  // budget. Bounded per run rather than spending the day's quota in one go;
-  // the rest come round on later runs.
   const budget = needed.slice(0, 40)
   const found = await pooled(budget, SIGNALS.concurrency, (title) =>
     findTrailer(title).catch(() => 'failed' as const),
@@ -131,8 +90,7 @@ export async function resolveTrailers(titles: Title[], today: Date): Promise<Cac
 
   budget.forEach((title, i) => {
     const result = found[i]
-    // undefined can't occur (pooled fills every slot) but the index signature
-    // says otherwise; treat it like a failure and retry rather than assert.
+
     if (result === undefined || result === 'failed') return
     if (result === null) {
       cache[cacheKey(title)] = { videoId: null, checked: todayKey }
@@ -157,25 +115,18 @@ interface StatsItem {
   statistics?: { viewCount?: string; likeCount?: string; commentCount?: string }
 }
 
-export interface YouTubeResult {
+interface YouTubeResult {
   readings: SignalStore
   resolved: number
   polled: number
 }
 
-/** Record today's lifetime counters for every resolved trailer.
- *
- * Stored as totals, not deltas. Deltas are derived at read time from two dated
- * readings, which keeps the store a record of what was observed rather than of
- * what we computed — a wrong delta can then be recomputed instead of being
- * baked in permanently.
- */
 export async function collect(
   titles: Title[],
   today: Date,
   cache: Cache,
 ): Promise<YouTubeResult> {
-  const videos = new Map<string, number>() // videoId -> title id
+  const videos = new Map<string, number>()
   for (const title of titles) {
     const hit = cache[cacheKey(title)]
     if (hit?.videoId) videos.set(hit.videoId, title.id)
@@ -189,8 +140,6 @@ export async function collect(
   const day = isoDay(today)
   let polled = 0
 
-  // videos.list takes up to 50 ids per call at 1 unit — the entire calendar
-  // costs about five units a day.
   const batches: string[][] = []
   for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50))
 
@@ -222,9 +171,3 @@ export async function collect(
   return { readings, resolved: videos.size, polled }
 }
 
-/** The trailer behind a title, for annotating "why is this hot". Available
- * from the first run — unlike the view series, this needs no history. */
-export function trailerFor(cache: Cache, title: Title): CacheEntry | null {
-  const hit = cache[cacheKey(title)]
-  return hit?.videoId ? hit : null
-}

@@ -19,8 +19,7 @@ type State =
 export default function App() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [filter, setFilter] = useState<Filter>('all')
-  // Real URLs rather than a modal, so a trending title can be linked to and
-  // reloaded. The server already serves the app for any unmatched path.
+
   const [route, setRoute] = useState(() => window.location.pathname)
 
   useEffect(() => {
@@ -70,8 +69,6 @@ export default function App() {
 
   const data = state.status === 'ready' ? state.data : null
 
-  /** Change reasons keyed by title id — lets the schedule tag and filter to
-   * changed titles without a second section duplicating the same rows. */
   const reasons = useMemo(() => {
     const map = new Map<number, AlertReason[]>()
     for (const alert of data?.alerts ?? []) map.set(alert.title.id, alert.reasons)
@@ -107,7 +104,6 @@ export default function App() {
     if (title) return <TitleDetail title={title} onBack={() => navigate('/')} />
   }
 
-  /** Clicking an active tile clears it, so a tile is a toggle, not a trap. */
   const toggle = (next: Filter) => setFilter((current) => (current === next ? 'all' : next))
 
   return (
@@ -132,8 +128,7 @@ export default function App() {
             active={filter === 'changed'}
             onClick={() => toggle('changed')}
           />
-          {/* The count and the page that lists them are the same idea, so
-              clicking the number to see them is the obvious gesture. */}
+          {}
           {data.buzz && (
             <Tile label="Trending" value={data.buzz.spiking} onClick={() => navigate('/trending')} />
           )}
@@ -151,9 +146,7 @@ export default function App() {
           reasons={reasons}
           onOpen={(id) => navigate(`/title/${id}`)}
         />
-        {/* Buzz sits ABOVE the change log: the log runs to dozens of rows on a
-            busy day (mostly "dropped", which is audit trail rather than news)
-            and pushed the signal panel below the fold. */}
+        {}
         <div className="flex flex-col gap-11">
           <Buzz
             titles={data.titles}

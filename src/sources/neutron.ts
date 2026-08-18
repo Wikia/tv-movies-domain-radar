@@ -1,30 +1,6 @@
-/** neutron-api client — the only network dependency in the pipeline.
- *
- * neutron-api is the backend-for-frontend behind metacritic.com and tvguide.com.
- * Its content endpoints are PUBLIC (no key, no auth header), reachable through
- * Fastly at https://backend.metacritic.com. One endpoint matters here:
- *
- *   /finder/metacritic/web?releaseType=coming-soon   -> the forward schedule
- *
- * A trending endpoint and a popularity-sorted variant were both used earlier and
- * removed: popularity covered 32 of 233 titles and no TV, and trending never
- * intersected the release calendar at all.
- *
- * Verified quirks (all confirmed against the live API, not just the source):
- *   - `sortBy` is SILENTLY IGNORED when releaseType=coming-soon. The server
- *     overwrites it with sortBy=releaseDate and forces the window to
- *     now .. +3 years. Don't bother passing a sort; sort locally instead.
- *   - `releaseYearMin`/`releaseYearMax` are likewise overwritten by coming-soon,
- *     so date-range narrowing must happen client-side.
- *   - No anticipation NUMBER is exposed anywhere: popularityCount orders results
- *     but is never returned. There is no usable demand measure in this API.
- *   - Fastly 403s non-browser user agents (see USER_AGENT).
- *   - `limit` above 50 is a 400. Hence MAX_PAGE_SIZE.
- */
 import { API_BASE, IMAGE_BASE, MAX_PAGE_SIZE, MCO_TYPE, USER_AGENT } from '../config.js'
 import type { MediaType, Title } from '../types.js'
 
-/** Shape of the bits of a finder/trending item we actually consume. */
 interface ApiItem {
   id: number
   title: string
@@ -56,7 +32,7 @@ async function getJson<T>(url: string): Promise<T> {
       return (await res.json()) as T
     } catch (error) {
       lastError = error
-      // Fastly occasionally blips; back off briefly rather than fail the run.
+
       if (attempt < MAX_RETRIES) await sleep(attempt * 500)
     }
   }
@@ -84,7 +60,6 @@ function userScoreValue(score: ApiItem['userScore']): number | null {
   return score.score ?? null
 }
 
-/** Public site path — what a human should click through to. */
 function siteUrl(type: MediaType, slug: string): string {
   return `https://www.metacritic.com/${type === 'movie' ? 'movie' : 'tv'}/${slug}/`
 }
@@ -97,27 +72,24 @@ function toTitle(item: ApiItem, type: MediaType): Title {
     slug: item.slug,
     url: siteUrl(type, item.slug),
     releaseDate: item.releaseDate ?? null,
-    daysOut: null, // filled in by schedule.ts, which knows the run date
+    daysOut: null,
     genres: (item.genres ?? []).map((g) => g?.name).filter((n): n is string => !!n),
     network: networkName(item.network),
     rating: item.rating ?? null,
     description: item.description ?? null,
     image: imageUrl(item.image),
-    poster: null, // resolved later by posters.ts, which knows what's cached
+    poster: null,
     criticScore: item.criticScoreSummary?.score ?? null,
     userScore: userScoreValue(item.userScore),
   }
 }
 
-/** Every upcoming title of one media type, paged out in full.
- *
- * The coming-soon set is small (a few hundred), so we deliberately fetch ALL of
- * it rather than a top-N. Completeness is the point — the radar's promise is
- * "don't miss anything", and a truncated list can't make that promise. */
+// `sortBy` and releaseYear* are silently overwritten server-side when
+// releaseType=coming-soon; sort and narrow client-side instead. Paging repeats
+// titles, hence the dedupe.
 export async function fetchUpcoming(type: MediaType, pageSize = MAX_PAGE_SIZE): Promise<Title[]> {
   const items: Title[] = []
-  // The upstream list shifts between pages, so the same id can surface in two
-  // consecutive windows. Dedupe by id or the output carries phantom duplicates.
+
   const seen = new Set<number>()
   let offset = 0
   let total = Infinity
@@ -131,7 +103,7 @@ export async function fetchUpcoming(type: MediaType, pageSize = MAX_PAGE_SIZE): 
     const page = body.data?.items ?? []
     total = body.data?.totalResults ?? page.length
 
-    if (page.length === 0) break // defensive: never spin on an empty page
+    if (page.length === 0) break
     for (const item of page) {
       if (seen.has(item.id)) continue
       seen.add(item.id)

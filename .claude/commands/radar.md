@@ -34,7 +34,7 @@ Regenerate the release radar. All commands run from the repo root.
    npm run radar
    ```
 
-   Flags: `--horizon N` (forward window, default 90), `--top N` (rows to print),
+   Flags: `--horizon N` (forward window, default 90),
    `--today YYYY-MM-DD` (pin the date to reproduce a past run — this deliberately
    does **not** write a snapshot, so it can't corrupt the diff history).
 

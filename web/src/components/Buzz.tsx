@@ -2,8 +2,6 @@ import { compact } from '../lib/format'
 import type { Buzz as BuzzReading, RadarOutput, Title } from '../types'
 import { Empty, Section, SignalRow, Tag } from './Primitives'
 
-/** Four steps so a 34 and a 60 don't land on the same colour — which is exactly
- * what happened when the ramp had only two coloured bands. */
 const BAND_TONE = {
   exceptional: 'band1',
   strong: 'band2',
@@ -17,13 +15,6 @@ type ScoredTitle = Title & { buzz: BuzzReading }
 
 const risingFirst = (title: ScoredTitle): number => (title.buzz.phase === 'rising' ? 0 : 1)
 
-/** Titles whose Wikipedia attention has broken away from their own normal.
- *
- * This is the only list in the app ordered by a score rather than by date, and
- * it stays defensible because of what the score measures: movement against the
- * title's own baseline, detrended against titles the same distance from
- * release. It ranks what changed, not what's famous — the schedule itself is
- * still chronological. */
 export function Buzz({
   titles,
   coverage,
@@ -35,10 +26,6 @@ export function Buzz({
   total: number
   onOpen: (id: number) => void
 }) {
-  // Strictly by points, because points are what the row displays. Sorting
-  // rising titles to the top instead put a 64 below an 11 and read as broken.
-  // Must match `ranked()` in src/buzz.ts — the two sorted differently once and
-  // the panel came out visibly unordered.
   const ranked = titles
     .filter((title): title is ScoredTitle => title.buzz != null)
     .sort((a, b) => b.buzz.points - a.buzz.points || risingFirst(a) - risingFirst(b))
@@ -72,13 +59,11 @@ export function Buzz({
                   <>
                     {/* Band colour never travels without the band's name. */}
                     <Tag tone={BAND_TONE[buzz.band]}>{buzz.band}</Tag>
-                    {/* How many independent sources agree — the reason for
-                        having more than one. */}
+                    {}
                     {title.attention && title.attention.rising.length > 1 && (
                       <Tag tone="muted">{title.attention.rising.length} sources</Tag>
                     )}
-                    {/* A fading title is still elevated but its event has
-                        passed, so it gets a quiet label. */}
+                    {}
                     {buzz.phase === 'rising' ? (
                       <Tag tone="hot">rising</Tag>
                     ) : buzz.phase === 'fading' ? (
@@ -89,9 +74,7 @@ export function Buzz({
               />
             )
           })}
-          {/* State coverage in the panel itself. Without it a top-12 list reads
-              as "the 12 hottest titles" when it's really "of the ones we could
-              measure at all". */}
+          {}
           <p className="pt-2.5 text-[11px] text-ink-3">
             Measured for {coverage.scored} of {total} titles — the rest have no Wikipedia article
             or too little traffic to read.

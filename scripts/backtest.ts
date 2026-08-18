@@ -1,27 +1,5 @@
 #!/usr/bin/env node
-/** Backtest the buzz detector against real Wikipedia history.
- *
- *   npm run backtest
- *
- * Why this exists: the radar's whole discipline is "measure before you ship" —
- * the original demand score was built on plausibility, and had to be torn out.
- * A scoring change should be judged by re-running this, not by eyeballing the
- * top of the dashboard.
- *
- * It imports the REAL `attach` from src/buzz.ts. A reimplementation here would
- * validate a copy rather than the code that ships.
- *
- * Replays the detector once per historical day and answers four questions:
- *   1. How many titles fire per day — is the volume liveable?
- *   2. Do flags flicker on and off? A detector that unfires is untrustworthy.
- *   3. Does "rising" predict sustained attention 7 days later, or reversion?
- *   4. THE CONTROL: what would the same test score on days it stayed quiet?
- *      Without a base rate, question 3's number means nothing.
- *
- * Requires `data/wiki-articles.json` and `out/radar.json`, so run the radar
- * first. Pageview history is cached in data/backtest-series.json (git-ignored);
- * delete it to refetch.
- */
+
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 
@@ -30,10 +8,13 @@ import { BUZZ, ROOT, WIKI_USER_AGENT } from '../src/config.js'
 import { pooled } from '../src/sources/wikipedia.js'
 import type { Title } from '../src/types.js'
 
+function out(line: string): void {
+  process.stdout.write(`${line}\n`)
+}
+
 const DAYS = 120
 const LOOKAHEAD = 7
-/** Views at +7d must still be this multiple of the fire-time baseline to count
- * as a hit — i.e. the attention actually stuck rather than blipping. */
+
 const HIT = 1.5
 const REVERTED = 1.2
 
@@ -58,7 +39,6 @@ async function fetchSeries(article: string, end: Date): Promise<Record<string, n
       for (const item of data.items ?? []) out[item.timestamp.slice(0, 8)] = item.views
       return out
     } catch {
-      /* retry */
     }
   }
   return {}
@@ -82,9 +62,9 @@ async function main(): Promise<void> {
   let history: Record<string, Record<string, number>>
   if (existsSync(CACHE)) {
     history = JSON.parse(readFileSync(CACHE, 'utf8'))
-    console.log(`[cache] history for ${Object.keys(history).length} titles`)
+    out(`[cache] history for ${Object.keys(history).length} titles`)
   } else {
-    console.log(`[fetch] ${DAYS}d of pageviews for ${articleOf.size} titles…`)
+    out(`[fetch] ${DAYS}d of pageviews for ${articleOf.size} titles…`)
     const entries = [...articleOf.entries()]
     const end = new Date(Date.now() - 86_400_000)
     const series = await pooled(entries, BUZZ.concurrency, ([, a]) => fetchSeries(a, end))
@@ -98,10 +78,8 @@ async function main(): Promise<void> {
 
   const axis = [...new Set(Object.values(history).flatMap((s) => Object.keys(s)))].sort()
   const dayIndex = new Map(axis.map((d, i) => [d, i]))
-  console.log(`[data] ${axis[0]} .. ${axis.at(-1)} (${axis.length} days)\n`)
+  out(`[data] ${axis[0]} .. ${axis.at(-1)} (${axis.length} days)\n`)
 
-  // Densify: the API omits zero-view days, so fill them — but stop at each
-  // article's last published day rather than padding the lag with zeros.
   const dense = new Map<number, number[]>()
   for (const [id, series] of Object.entries(history)) {
     const last = Object.keys(series).sort().at(-1)!
@@ -120,16 +98,11 @@ async function main(): Promise<void> {
     const day = axis[j]!
     const asOf = Date.parse(`${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}T00:00:00Z`)
 
-    // Fresh copies each day: attach() mutates, and daysOut must be recomputed
-    // as of the replay date or every title sits in the wrong cohort — which
-    // would silently disable the detrending this is meant to test.
     const snapshot: Title[] = []
     const series = new Map<number, number[]>()
     for (const [id, values] of dense) {
       if (values.length <= j) continue
-      // The cached history outlives the calendar: titles that have since fallen
-      // out of "coming soon" still have an entry here. Skip them rather than
-      // asserting non-null, which crashed the whole run 31 titles later.
+
       const title = titleById.get(id)
       if (!title) continue
       const daysOut = title.releaseDate
@@ -153,9 +126,9 @@ async function main(): Promise<void> {
     perDay.push(fired)
   }
 
-  console.log('=== 1. ALERT VOLUME ===')
-  console.log(`replayed ${perDay.length} days over ${dense.size} titles`)
-  console.log(
+  out('=== 1. ALERT VOLUME ===')
+  out(`replayed ${perDay.length} days over ${dense.size} titles`)
+  out(
     `rising per day — min ${Math.min(...perDay)}, median ${median(perDay)}, max ${Math.max(...perDay)}`,
   )
 
@@ -175,9 +148,9 @@ async function main(): Promise<void> {
       }
     }
   }
-  console.log('\n=== 2. STABILITY ===')
-  console.log(`distinct rising episodes: ${episodes}`)
-  console.log(`flickered off then back within 3d: ${flickers} (${pct(flickers, episodes)})`)
+  out('\n=== 2. STABILITY ===')
+  out(`distinct rising episodes: ${episodes}`)
+  out(`flickered off then back within 3d: ${flickers} (${pct(flickers, episodes)})`)
 
   const first = new Map<number, (typeof fires)[number]>()
   for (const fire of fires) if (!first.has(fire.id)) first.set(fire.id, fire)
@@ -195,15 +168,12 @@ async function main(): Promise<void> {
     else ambiguous++
   }
   const judged = hits + reverted + ambiguous
-  console.log(`\n=== 3. HIT vs FALSE ALARM (first fire per title, +${LOOKAHEAD}d) ===`)
-  console.log(`judged ${judged} episodes`)
-  console.log(`  hit (still >=${HIT}x baseline):  ${hits} (${pct(hits, judged)})`)
-  console.log(`  ambiguous:                     ${ambiguous} (${pct(ambiguous, judged)})`)
-  console.log(`  false alarm (reverted):        ${reverted} (${pct(reverted, judged)})`)
+  out(`\n=== 3. HIT vs FALSE ALARM (first fire per title, +${LOOKAHEAD}d) ===`)
+  out(`judged ${judged} episodes`)
+  out(`  hit (still >=${HIT}x baseline):  ${hits} (${pct(hits, judged)})`)
+  out(`  ambiguous:                     ${ambiguous} (${pct(ambiguous, judged)})`)
+  out(`  false alarm (reverted):        ${reverted} (${pct(reverted, judged)})`)
 
-  // The control. Without a base rate the number above is unreadable: if quiet
-  // days are just as likely to be elevated a week later, the detector selects
-  // nothing.
   let quietHit = 0
   let quietTotal = 0
   for (const [id, days] of phases) {
@@ -219,11 +189,11 @@ async function main(): Promise<void> {
       if (median(values.slice(j - 2, j + 1)) / base >= HIT) quietHit++
     }
   }
-  console.log('\n=== 4. CONTROL — same test on days the detector stayed QUIET ===')
-  console.log(`quiet (title, day) pairs: ${quietTotal}`)
-  console.log(`  elevated anyway: ${quietHit} (${pct(quietHit, quietTotal)})`)
+  out('\n=== 4. CONTROL — same test on days the detector stayed QUIET ===')
+  out(`quiet (title, day) pairs: ${quietTotal}`)
+  out(`  elevated anyway: ${quietHit} (${pct(quietHit, quietTotal)})`)
   const lift = hits / judged / (quietHit / quietTotal)
-  console.log(
+  out(
     `\nLIFT: ${pct(hits, judged)} vs ${pct(quietHit, quietTotal)} base rate = ${lift.toFixed(1)}x better than firing at random`,
   )
 }
@@ -233,6 +203,6 @@ function pct(n: number, total: number): string {
 }
 
 main().catch((error: unknown) => {
-  console.error('\n[fatal]', error instanceof Error ? error.message : error)
+  process.stderr.write(`[fatal] ${error instanceof Error ? error.message : String(error)}\n`)
   process.exit(1)
 })
