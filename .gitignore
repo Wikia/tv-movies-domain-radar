@@ -28,3 +28,10 @@ data/wiki-articles.json
 
 # Backtest pageview history — regenerable, delete to refetch.
 data/backtest-series.json
+
+# Daily signal snapshots (news / youtube / tmdb) and their id caches.
+# Regenerable in principle, but the history is NOT re-fetchable — YouTube and
+# TMDB only report "now" — so back these up before wiping a machine.
+data/signals/
+data/youtube-videos.json
+data/tmdb-ids.json

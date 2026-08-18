@@ -152,6 +152,33 @@ into one number — you have rebuilt the thing that was deleted.
   skill's `validate_palette.js` against this app's own surfaces — re-run it
   before touching these values. Band colour always ships with the band's name
   in text, because amber is sub-3:1 on the light ground.
+### Daily signal snapshots (`src/store.ts`, `src/sources/{news,youtube,tmdb}.ts`)
+
+- **These three have no history endpoint.** Wikipedia backfills two months;
+  YouTube and TMDB report only lifetime totals, and Google News answers one day
+  at a time. The series in `data/signals/` exists *only* because we record it —
+  wipe that directory and the history is gone for good, not re-fetchable.
+- **Never fill a gap with zero.** Same lesson as the Wikipedia lag bug: absent
+  is not zero. `store.series()` returns the days that exist and no others.
+- **The 7-day gate is load-bearing.** `SIGNALS.minHistoryDays` stops a
+  newly-added title reading as a spike against a two-point baseline. Don't lower
+  it to "get more results" — the results it withholds are noise.
+- **Google News must be queried one day at a time.** Counting `pubDate`s from a
+  single feed undercounts older days (relevance-ordered, capped at 100) and
+  manufactures spikes: one query said 36 articles for a day that windowed
+  queries showed as 320. Also saturates at 100/day — stored with `capped: 1`.
+- **News backfill is budgeted** (`newsQueriesPerRun`). Seeding the calendar
+  unbudgeted is ~3,000 requests and takes minutes.
+- **TMDB `voteCount` is 0 until release**, so for a calendar of *upcoming*
+  titles `popularity` is the only metric that moves — despite being a black box
+  that feeds on its own previous value and is therefore pre-smoothed. Record
+  both; score popularity pre-release and votes after.
+- **TMDB licensing is unresolved.** Free for non-commercial use only; this is a
+  commercial company. Clear it before anything user-facing, and carry the
+  attribution notice.
+- **A pinned `--today` records no readings**, for the same reason it writes no
+  calendar snapshot: today's numbers filed under a past date would corrupt the
+  history permanently.
 - **Don't reach for Reddit, X or Google Trends without re-probing.** All three
   were tested live and rejected — Reddit 403s unauthenticated, X needs a paid
   key, Google Trends' explore API 429s and its working RSS feed had zero

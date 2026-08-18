@@ -19,13 +19,17 @@ import { parseArgs } from 'node:util'
 import * as alerts from './alerts.js'
 import * as artifact from './artifact.js'
 import * as buzz from './buzz.js'
-import { BUZZ, HORIZON_DAYS, ROOT } from './config.js'
+import { BUZZ, HORIZON_DAYS, ROOT, SIGNALS, TMDB_TOKEN, YOUTUBE_KEY } from './config.js'
 import * as posters from './posters.js'
 import { applyDates, byReleaseDate } from './schedule.js'
 import * as snapshot from './snapshot.js'
 import * as fandom from './sources/fandom.js'
 import { fetchUpcoming } from './sources/neutron.js'
+import * as news from './sources/news.js'
+import * as tmdb from './sources/tmdb.js'
 import * as wikipedia from './sources/wikipedia.js'
+import * as youtube from './sources/youtube.js'
+import * as store from './store.js'
 import * as trending from './trending.js'
 import type { MediaType, RadarOutput, Title, TitleTrend, TrendingReport } from './types.js'
 
@@ -117,6 +121,12 @@ async function main(): Promise<void> {
       `${scored} scored, ${spiking} spiking`,
   )
 
+  // --- daily signal snapshots --------------------------------------------
+  // Recorded, not yet scored. These three can't tell us what yesterday looked
+  // like, so the series has to be accumulated before it can say anything —
+  // SIGNALS.minHistoryDays governs when a title becomes usable.
+  await collectSignals(titles, today, pinned)
+
   const fired = alerts.build(titles, changes)
   console.log(`[alert] ${fired.length} titles changed inside the alert window`)
 
@@ -167,6 +177,71 @@ async function main(): Promise<void> {
   console.log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
 
   report(inHorizon, fired, top, horizonDays, trendingReport)
+}
+
+/** Record one day's reading from each daily-snapshot source.
+ *
+ * Deliberately after the calendar and Wikipedia work, and deliberately unable
+ * to fail the run: these are accumulating history for later, so a bad day at
+ * YouTube must not cost us the calendar. Each source degrades to "no reading"
+ * on its own.
+ *
+ * A pinned --today is skipped for the same reason it doesn't write a calendar
+ * snapshot: the readings would be today's numbers filed under a past date,
+ * which would corrupt the history permanently.
+ */
+async function collectSignals(titles: Title[], today: Date, pinned: boolean): Promise<void> {
+  if (pinned) {
+    console.log('[signal] --today is pinned — not recording snapshots')
+    return
+  }
+
+  try {
+    const store0 = await store.load('news')
+    const result = await news.collect(titles, today, store0)
+    await store.save('news', store0, result.readings, today)
+    console.log(
+      `[news] ${result.queried} day-queries, ${result.pending} still to backfill, ` +
+        `${result.skipped} too generic to search, ${result.failed} failed · ` +
+        `${store.mature(store0, 'articles')} titles with ${SIGNALS.minHistoryDays}+ days`,
+    )
+  } catch (error) {
+    console.log(`[news] skipped: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (!YOUTUBE_KEY) {
+    console.log('[yt] no YOUTUBE_API_KEY — skipping (see README "Signal sources")')
+  } else {
+    try {
+      const cache = await youtube.resolveTrailers(titles, today)
+      const store0 = await store.load('youtube')
+      const result = await youtube.collect(titles, today, cache)
+      await store.save('youtube', store0, result.readings, today)
+      console.log(
+        `[yt] ${result.resolved} trailers resolved, ${result.polled} polled · ` +
+          `${store.mature(store0, 'views')} titles with ${SIGNALS.minHistoryDays}+ days`,
+      )
+    } catch (error) {
+      console.log(`[yt] skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  if (!TMDB_TOKEN) {
+    console.log('[tmdb] no TMDB_ACCESS_TOKEN — skipping (see README "Signal sources")')
+  } else {
+    try {
+      const cache = await tmdb.resolveIds(titles, today)
+      const store0 = await store.load('tmdb')
+      const result = await tmdb.collect(titles, today, cache)
+      await store.save('tmdb', store0, result.readings, today)
+      console.log(
+        `[tmdb] ${result.resolved} ids resolved, ${result.polled} polled · ` +
+          `${store.mature(store0, 'popularity')} titles with ${SIGNALS.minHistoryDays}+ days`,
+      )
+    } catch (error) {
+      console.log(`[tmdb] skipped: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
 }
 
 function report(

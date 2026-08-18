@@ -150,6 +150,56 @@ export const BUZZ = {
 export const WIKI_USER_AGENT =
   'tv-movies-domain-radar/0.1 (https://github.com/fandom; tv-movies-domain@fandom.com)'
 
+/** Daily-snapshot signals: Google News, YouTube and TMDB.
+ *
+ * These three are grouped because they share the property that shaped the
+ * design — unlike Wikipedia, which hands back two months of history on every
+ * call, none of them will tell you what yesterday looked like. YouTube and TMDB
+ * expose only lifetime counters, so a series exists *only* if we record one.
+ * Google News can be asked about a past day, but only one day at a time.
+ *
+ * So the pipeline records a reading per source per day and reads its own
+ * history back. That also means a freshly added title has no history at all,
+ * which is what `minHistoryDays` is for.
+ */
+export const SIGNALS = {
+  /** A source needs this many distinct days recorded before it may influence a
+   * trend verdict. Below it there is no baseline to be unusual against — three
+   * points can't tell a spike from a title we simply started watching. */
+  minHistoryDays: 7,
+
+  /** Days of per-source history to keep. Matches the calendar snapshots so the
+   * whole of data/ prunes on one horizon. */
+  keepDays: 60,
+
+  /** Google News is the only one of the three that can be asked about a past
+   * day, so a new title can be seeded rather than waiting a week. */
+  newsBackfillDays: 10,
+
+  /** Ceiling on Google News day-queries per run.
+   *
+   * Backfill is one request per title per day, so seeding a fresh store for the
+   * whole calendar is thousands of requests — a first run took minutes and was
+   * rude to an endpoint that asks nothing of us. The budget spreads that over
+   * several runs instead, nearest-release-first, so the titles that matter get
+   * a baseline soonest. Steady state is far below this: one new day per title.
+   */
+  newsQueriesPerRun: 600,
+
+  /** Google News caps a query at 100 items, so a day at 100 is censored rather
+   * than measured — recorded, but flagged so nothing reads it as exact. */
+  newsDailyCap: 100,
+
+  /** Requests in flight per source. These are third-party endpoints being
+   * polled on a schedule; there is no reason to be impolite about it. */
+  concurrency: 4,
+} as const
+
+/** Google News RSS needs no key. YouTube and TMDB do; both no-op when absent,
+ * so the pipeline degrades to "no signal" instead of failing. */
+export const YOUTUBE_KEY = process.env.YOUTUBE_API_KEY ?? ''
+export const TMDB_TOKEN = process.env.TMDB_ACCESS_TOKEN ?? ''
+
 /** neutron-api front door. Override with NEUTRON_API_BASE for stage/dev. */
 export const API_BASE = process.env.NEUTRON_API_BASE ?? 'https://backend.metacritic.com'
 

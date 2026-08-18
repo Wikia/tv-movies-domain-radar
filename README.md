@@ -405,6 +405,117 @@ Reddit remains the best addition if it's wanted; the scoring layer is
 source-agnostic and a second, independent source would let a spike require
 corroboration before it's promoted.
 
+## Signal sources (daily snapshots)
+
+Wikipedia hands back two months of history on every call, so the buzz detector
+worked on its first run. **Google News, YouTube and TMDB don't.** YouTube and
+TMDB report only lifetime totals; Google News can be asked about a past day, but
+one day at a time. For those three, a time series exists *only because we record
+one*.
+
+So each run writes a dated reading per source under `data/signals/`:
+
+```
+data/signals/news.json     { "<titleId>": { "2026-08-17": { "articles": 21 } } }
+data/signals/youtube.json  { "<titleId>": { "2026-08-17": { "views": 12000 } } }
+data/signals/tmdb.json     { "<titleId>": { "2026-08-17": { "voteCount": 88 } } }
+```
+
+Three rules, each from a bug this project already hit:
+
+- **Append, never rewrite.** A recorded day is history; re-running must not
+  disturb it.
+- **A missing day is missing, not zero.** Nothing fills gaps. Treating an absent
+  reading as a real zero is what scored the entire calendar 0 when Wikipedia's
+  publication lag was mistaken for "no views".
+- **Keyed by title id**, so a title that drops off the calendar keeps its
+  history if the release comes back.
+
+### The 7-day maturity gate
+
+`store.series()` returns `null` until a title has **`SIGNALS.minHistoryDays`
+(7)** distinct readings. Three points can't distinguish a spike from a title we
+simply started watching, so scoring one would report every newly-added title as
+trending. Below the gate it's *no signal* — which the UI already renders
+differently from a low score.
+
+Coverage is printed per source, e.g. `60 titles with 7+ days`.
+
+### Google News — no credentials needed
+
+Keyless, no quota, no approval. It also reaches titles Wikipedia can't see: an
+article can exist about a film with no Wikipedia article, which is exactly the
+buzz detector's blind spot.
+
+**One request per title per day, deliberately.** The obvious approach — fetch
+the feed once, count `pubDate`s — is a false-spike generator: the feed is
+relevance-ordered and capped at 100 items, so for a busy title the older days
+are silently truncated and read as a flat baseline followed by a huge jump.
+Measured live: one unwindowed query reported 36 articles for *Coyote vs. Acme*
+on 2026-08-12; day-windowed queries over the same period found **320**.
+`after:`/`before:` are respected, so a windowed query returns that day only.
+
+Two limits, both recorded rather than hidden:
+
+- **Saturates at 100/day.** A day at the cap is stored with `capped: 1` so
+  nothing downstream reads it as exact.
+- **Generic titles are declined.** A quoted phrase is still a phrase —
+  *"Dreams in Nightmares"* returned articles from 2023. Titles under two words
+  or eight letters are skipped and counted in the log.
+
+Backfill is **budgeted** (`newsQueriesPerRun`, 600) and ordered nearest-release
+first: seeding the whole calendar at once is thousands of requests and took
+minutes. The remainder fills in over subsequent runs; steady state is one new
+day per title.
+
+### YouTube — needs `YOUTUBE_API_KEY`
+
+Free, self-serve from Google Cloud Console (enable *YouTube Data API v3* →
+create an API key). No approval queue.
+
+No backfill: nothing usable on day one, a baseline after about a week. What
+*is* available immediately is the trailer's `publishedAt` — a timestamped,
+verifiable cause, which is the half of the sentence the dashboard can't yet say.
+
+Quota (10,000 units/day) drives the design: `search.list` costs 100 units so
+trailer resolution is cached forever in `data/youtube-videos.json` and budgeted
+per run; `videos.list` costs 1 unit and batches 50 ids, so polling the whole
+calendar costs about **5 units/day**.
+
+### TMDB — needs `TMDB_ACCESS_TOKEN`
+
+v3 Read Access Token as a Bearer header. Ids cached in `data/tmdb-ids.json`.
+
+**Score `popularity` before release, `voteCount` after.** `voteCount` is the
+more interpretable metric — a plain counter, so day-over-day it's votes-per-day
+— but it is **0 until a title is released**: *Verity* (out in September) has 0
+votes and popularity 13, while released titles carry thousands. Since this radar
+is entirely about upcoming titles, `popularity` is the only TMDB metric that
+moves for us, despite being a proprietary composite that feeds on its own
+previous value and is therefore pre-smoothed. Both are stored; `voteCount`
+becomes the better signal the moment a title lands.
+
+TMDB has changed the popularity formula before, moving every title at once. The
+detector is already immune: cohort detrending divides each title's ratio by the
+median ratio of its days-out bucket, so anything shifting the whole population
+cancels — a guard built for the release ramp that happens to cover this too.
+
+> **Licensing.** TMDB is free for non-commercial use with attribution.
+> Commercial use requires a licence from TMDB. This is an internal tool at a
+> commercial company, so **get that cleared before it goes user-facing**, and
+> add the required notice: *"This product uses the TMDB API but is not endorsed
+> or certified by TMDB."*
+
+### Environment
+
+```bash
+YOUTUBE_API_KEY=      # optional; YouTube no-ops without it
+TMDB_ACCESS_TOKEN=    # optional; TMDB no-ops without it
+```
+
+Both degrade to "no signal" when absent, the same way the first-party export
+does — a missing key never fails the run.
+
 ## Changes and alerts
 
 Every run diffs against the previous snapshot:
