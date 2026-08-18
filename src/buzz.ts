@@ -1,31 +1,6 @@
-/** The buzz score — "is this title actually being talked about right now?"
- *
- * This is the point system, and it is built to avoid the two failures that got
- * the ORIGINAL demand score deleted (see types.ts):
- *
- * 1. It measures a title against ITSELF, not against other titles. A score that
- *    ranks the calendar by absolute attention just re-discovers which franchises
- *    are famous. What's actionable is a title departing from its own normal, so
- *    a mid-budget horror film breaking out is visible next to Marvel.
- *
- * 2. It removes the release ramp before scoring. Attention rises as a release
- *    approaches for EVERY title, so scoring raw growth would flag the whole
- *    calendar in release week — a calendar fact wearing a score's clothing,
- *    which is precisely what the deleted score turned into. Each title is
- *    compared against the median growth of titles at the same distance from
- *    release, so only *unusual* movement survives.
- *
- * And one honesty rule the old score didn't have: a title with no data gets no
- * reading at all, rather than a 0. "No signal" and "cold" are different claims
- * and the UI has to keep them apart.
- */
 import { BUZZ } from './config.js'
 import type { Buzz, Title } from './types.js'
 
-/** Middle value of a sorted copy. Median rather than mean throughout: these
- * series are spiky by nature and one past spike shouldn't blind the detector
- * for a month afterwards. Exported so the backtest measures with the same
- * statistic the detector uses. */
 export function median(values: number[]): number {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
@@ -37,15 +12,12 @@ function mean(values: number[]): number {
   return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length
 }
 
-/** Which days-out bucket a title falls in. Undated titles get their own bucket
- * rather than being lumped with the imminent ones. */
-function bucketOf(daysOut: number | null): string {
+export function bucketOf(daysOut: number | null): string {
   if (daysOut == null) return 'undated'
   const edge = BUZZ.cohortBuckets.find((d) => daysOut <= d)
   return edge != null ? `<=${edge}` : 'far'
 }
 
-/** Raw, per-title reading before any cohort adjustment. */
 interface Raw {
   recent: number
   baseline: number
@@ -53,18 +25,12 @@ interface Raw {
   momentum: number
 }
 
-function measure(series: number[]): Raw | null {
-  // Need a full baseline window plus the recent window, or the comparison is
-  // between two different amounts of evidence.
+export function measure(series: number[], minBaseline: number = BUZZ.minBaselineViews): Raw | null {
   if (series.length < BUZZ.baselineDays + BUZZ.recentDays) return null
   const recent = mean(series.slice(-BUZZ.recentDays))
   const baseline = median(series.slice(-(BUZZ.baselineDays + BUZZ.recentDays), -BUZZ.recentDays))
-  if (baseline < BUZZ.minBaselineViews) return null // too small to spike meaningfully
+  if (baseline < minBaseline) return null
 
-  // Momentum compares the recent window against the days immediately before it
-  // — a much shorter memory than the 28-day baseline. That short memory is the
-  // point: it's what distinguishes "climbing right now" from "still well above
-  // a month-old normal, but falling".
   const previous = median(
     series.slice(-(BUZZ.momentumDays + BUZZ.recentDays), -BUZZ.recentDays),
   )
@@ -76,21 +42,6 @@ function measure(series: number[]): Raw | null {
   }
 }
 
-/** Map a detrended ratio onto 0..100.
- *
- * Points measure the SIZE of the anomaly — excess daily views over what the
- * title would be getting anyway — not the multiple. That change matters:
- * scoring the multiple made a small article going 200 -> 3,700 outrank a big
- * one going 3,000 -> 32,000, when the second is by far the larger event.
- *
- * Using *excess* rather than raw views keeps this from becoming the fame score
- * that was deleted: a huge title sitting at its normal level has excess ~0 and
- * scores ~0. Only a surge scores, whoever it belongs to.
- *
- * Log-scaled because attention is multiplicative, and anchored so 100 is The
- * Odyssey's 1.2M/day peak — a real once-a-year event, not a threshold an
- * ordinary trailer can reach.
- */
 function toPoints(excess: number): number {
   if (excess <= BUZZ.floorExcess) return 0
   const floor = Math.log10(BUZZ.floorExcess)
@@ -106,16 +57,7 @@ function bandOf(points: number): Buzz['band'] {
   return 'quiet'
 }
 
-/**
- * Attach a buzz reading to every title we have enough data for.
- *
- * Mutates `titles`, like the other enrichment steps. Returns how many scored,
- * so the caller can report coverage rather than quietly implying full coverage.
- */
 export function attach(titles: Title[], series: Map<number, number[]>): number {
-  // Pass 1: raw readings, each tagged with its cohort. Bucketing here rather
-  // than again in pass 3 keeps the two passes from ever disagreeing about which
-  // cohort a title belongs to.
   const readings: { title: Title; raw: Raw; bucket: string }[] = []
   for (const title of titles) {
     const values = series.get(title.id)
@@ -124,10 +66,6 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
     if (raw) readings.push({ title, raw, bucket: bucketOf(title.daysOut) })
   }
 
-  // Pass 2: the cohort baseline — the median ratio among titles at a similar
-  // distance from release. This is what strips out the release ramp, and it
-  // also absorbs anything that moved the whole calendar at once (a holiday, a
-  // Wikipedia outage), since that shifts every ratio together.
   const ratiosByBucket = new Map<string, number[]>()
   for (const { raw, bucket } of readings) {
     const ratios = ratiosByBucket.get(bucket)
@@ -138,7 +76,6 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
     [...ratiosByBucket].map(([bucket, ratios]) => [bucket, median(ratios) || 1]),
   )
 
-  // Pass 3: detrend and score.
   for (const { title, raw, bucket } of readings) {
     const cohort = cohortRatio.get(bucket) ?? 1
     const relative = raw.ratio / cohort
@@ -150,9 +87,6 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
         ? 'fading'
         : 'rising'
 
-    // Excess is measured against what the cohort says this title should be
-    // doing at its age, not against its own flat baseline — so the release
-    // ramp is removed from the magnitude too, not just from the multiple.
     const expected = raw.baseline * cohort
     const excess = Math.max(0, raw.recent - expected)
     const points = toPoints(excess)
@@ -168,36 +102,23 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
       momentum: Math.round(raw.momentum * 100) / 100,
       cohort: bucket,
       phase,
-      // "Spiking" now means elevated AND not already on the way down. A title
-      // whose event finished a fortnight ago is still elevated against a
-      // 28-day baseline, but it is not news and should not be tagged as if it
-      // were.
+
       spiking: phase === 'rising',
     }
   }
   return readings.length
 }
 
-/** Titles worth showing in the buzz panel.
- *
- * Rising events first, then by points — which now means by the SIZE of the
- * surge. Ranking by multiple instead put tiny articles with big percentages
- * above genuinely large events.
- *
- * Deliberately NOT applied to the schedule, which stays chronological.
- */
 export function ranked(titles: Title[], limit: number): ScoredTitle[] {
   const risingFirst = (title: ScoredTitle): number => (title.buzz.phase === 'rising' ? 0 : 1)
   return titles
     .filter(isScored)
-    .sort((a, b) => risingFirst(a) - risingFirst(b) || b.buzz.points - a.buzz.points)
+    .sort((a, b) => b.buzz.points - a.buzz.points || risingFirst(a) - risingFirst(b))
     .slice(0, limit)
 }
 
-/** A title that actually has a reading. Callers get this back from `ranked()`
- * so they can read `.buzz` without a non-null assertion at every use. */
-export type ScoredTitle = Title & { buzz: Buzz }
+type ScoredTitle = Title & { buzz: Buzz }
 
-export function isScored(title: Title): title is ScoredTitle {
+function isScored(title: Title): title is ScoredTitle {
   return title.buzz != null
 }

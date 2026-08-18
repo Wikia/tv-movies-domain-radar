@@ -1,19 +1,3 @@
-/** Self-contained HTML dashboard generator.
- *
- * The React app in web/ is the operator's tool: it needs a server and it
- * searches. This is the SHAREABLE artifact — one file, data baked in, no
- * server, no network.
- *
- * Emits two files:
- *   out/dashboard.html          — standalone page, open it in a browser
- *   out/dashboard.artifact.html — body-only fragment, for publishing as an
- *                                 Artifact (whose host supplies the skeleton)
- *
- * Poster art is INLINED as data URIs, because the Artifact CSP blocks every
- * external host — a remote <img> would silently show nothing. Inlining is
- * budgeted (INLINE_BUDGET) so the page stays well under the 16 MB cap; titles
- * past the budget fall back to an initials tile, same as titles with no art.
- */
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -26,26 +10,21 @@ import type {
   Buzz,
   Change,
   RadarOutput,
+  SignalSource,
   Title,
   TrendingReport,
 } from './types.js'
 
-/** Keep the published page comfortably inside the 16 MB artifact cap. */
 const INLINE_BUDGET = 7_000_000
 
-/** The row class is referenced by BOTH the renderer and the filter script.
- * They drifted apart once — the renderer moved from cards to rows while the
- * script kept querying `.card`, which matched nothing, so the script hid every
- * month group and blanked the page. One constant used by both, plus the
- * assertion in build(), makes that impossible to repeat. */
+// Shared by the renderer and the inline script: a stale selector once hid every
+// row and shipped a blank page. build() throws if it renders none.
 const ROW_CLASS = 'row'
 
 const REASON_LABEL: Record<AlertReason, string> = {
   'newly-added': 'new on calendar',
   'date-changed': 'date moved',
-  // The row already carries a wiki/franchise tag from title.trend, so this
-  // reason would render the same fact twice. Blank here, and the alert filter
-  // still finds the row via data-alert.
+
   'wiki-trending': '',
 }
 
@@ -105,12 +84,20 @@ function initials(title: string): string {
     .join('')
 }
 
-/** Poster tile, or a typographic stand-in when there's no art. */
-function poster(title: Title, src: string | null, extraClass = ''): string {
-  if (src) {
-    return `<div class="art ${extraClass}"><img src="${src}" alt="" loading="lazy" decoding="async"></div>`
-  }
+/** Poster tile, or a typographic stand-in when there's no art.
+ *
+ * The art is painted by a per-title CSS class rather than an inline `<img>`, so
+ * each data URI is written into the page exactly once no matter how many places
+ * show that poster. Inlining per element instead would have doubled a 7 MB page
+ * the moment the detail view started showing art too. */
+function poster(title: Title, hasArt: boolean, extraClass = ''): string {
+  if (hasArt) return `<div class="art a${title.id} ${extraClass}" aria-hidden="true"></div>`
   return `<div class="art noart ${extraClass}" aria-hidden="true"><span>${esc(initials(title.title))}</span></div>`
+}
+
+/** One rule per title, carrying that title's inlined poster. */
+function artCSS(art: Art): string {
+  return [...art].map(([id, src]) => `.art.a${id}{background-image:url("${src}")}`).join('\n')
 }
 
 /** Tokens live on `.radar`, NOT :root, so the theme toggle owns them.
@@ -127,18 +114,8 @@ const CSS = `
   --ink:#1A1917; --ink-2:#57534E; --ink-3:#8C8681;
   --accent:#B45309; --accent-bg:rgba(180,83,9,.10);
   --up:#15803D; --moved:#1D4ED8; --moved-bg:rgba(29,78,216,.09);
-  /* Heat ramp: quiet -> notable -> strong -> exceptional.
-     Steps are validated against THIS surface, not eyeballed — the obvious
-     green/yellow/orange/red picks fail adjacent separation (a plain
-     #ea580c orange sits ΔE 1.6 from #d97706 amber under deutan, and 6.7 even
-     with full colour vision). These four clear the gates on light: worst
-     adjacent deutan ΔE 11.9, normal-vision 15.1. Yellow is sub-3:1 here, so
-     every band ships with its number and name in text. */
-  --hot-1:#b4232a; --hot-1-bg:rgba(180,35,42,.10);   /* exceptional */
-  --hot-2:#e2622a; --hot-2-bg:rgba(226,98,42,.12);   /* strong */
-  --hot-3:#eda100; --hot-3-bg:rgba(237,161,0,.14);   /* notable */
-  --hot-4:#008300; --hot-4-bg:rgba(0,131,0,.10);     /* quiet */
-  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
+  /* CVD-validated on both surfaces — re-run validate_palette.js before changing. */
+  --hot-1:#b4232a; --hot-1-bg:rgba(180,35,42,.10);  --hot-2:#e2622a; --hot-2-bg:rgba(226,98,42,.12);  --hot-3:#eda100; --hot-3-bg:rgba(237,161,0,.14);  --hot-4:#008300; --hot-4-bg:rgba(0,131,0,.10);  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){
@@ -148,10 +125,6 @@ const CSS = `
     --ink:#F5F4F2; --ink-2:#A8A29E; --ink-3:#78716C;
     --accent:#FBBF24; --accent-bg:rgba(245,158,11,.14);
     --up:#4ADE80; --moved:#93B4FF; --moved-bg:rgba(147,180,255,.13);
-    /* Dark steps: re-picked, not lightened versions of the light ones. On a
-       dark ground every step must clear 3:1, which pushes orange and red
-       together — #eb6834 sits ΔE 5.6 from #e66767. These four pass: worst
-       adjacent normal-vision ΔE 16.2, protan 8.2. */
     --hot-1:#ef4444; --hot-1-bg:rgba(239,68,68,.16);
     --hot-2:#fb923c; --hot-2-bg:rgba(251,146,60,.16);
     --hot-3:#fde047; --hot-3-bg:rgba(253,224,71,.16);
@@ -174,15 +147,12 @@ const CSS = `
 .radar{
   background:var(--ground);color:var(--ink);font-family:var(--sans);
   font-size:15px;line-height:1.55;margin:0;padding:40px 28px 72px;
-  /* Cover the viewport so a toggled theme doesn't leave a band of the old
-     ground under short content. */
   min-height:100vh;
   -webkit-font-smoothing:antialiased;
 }
 .wrap{max-width:1140px;margin:0 auto}
 .radar a{color:inherit}
 
-/* --- header ----------------------------------------------------------- */
 .top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px;margin-bottom:32px}
 .top h1{font-size:clamp(28px,4.4vw,40px);font-weight:650;letter-spacing:-.025em;margin:0;line-height:1.05;text-wrap:balance}
 .kicker{font-size:13px;color:var(--ink-2);margin:0 0 6px}
@@ -192,7 +162,6 @@ const CSS = `
 .tile b{display:block;font-size:24px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.15}
 .tile span{display:block;font-size:11px;color:var(--ink-3);margin-top:1px}
 
-/* --- theme toggle ------------------------------------------------------ */
 #theme{
   font:inherit;font-size:11px;cursor:pointer;padding:8px 12px;border-radius:10px;
   border:1px solid var(--line);background:var(--raise);color:var(--ink-2);
@@ -201,7 +170,6 @@ const CSS = `
 #theme:hover{color:var(--ink);border-color:var(--ink-3)}
 #theme:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-/* --- sections ---------------------------------------------------------- */
 .radar h2{font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2);margin:0}
 .shead{
   display:flex;align-items:center;gap:12px;height:32px;
@@ -210,7 +178,6 @@ const CSS = `
 .shead .aside{font-size:12px;color:var(--ink-3);margin-left:auto}
 .radar section{margin-bottom:40px}
 
-/* --- filter chips ------------------------------------------------------ */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
 button.chip{
   font:inherit;font-size:11px;cursor:pointer;padding:4px 10px;border-radius:20px;
@@ -222,9 +189,6 @@ button.chip[aria-pressed="true"]{border-color:var(--accent);background:var(--acc
 button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .radar [hidden]{display:none !important}
 
-/* --- schedule rows -----------------------------------------------------
-   One column template shared by the header and every row — the only way the
-   two stay aligned. Genres and countdown drop out on narrow screens. */
 .rowhead,.row{
   display:grid;align-items:center;column-gap:12px;
   grid-template-columns:64px 28px 1fr 40px 40px;
@@ -250,8 +214,6 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .row .k{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
 .row .g{font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .o{font-family:var(--mono);font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
-/* A measured-but-static title still shows its number, just quieter, so the
-   column reads as "rising titles stand out" rather than "everything is lit". */
 .hs.faint{opacity:.65;font-weight:400}
 .hs.zero{color:var(--ink-3)}
 .none{font-family:var(--mono);font-size:12px;color:var(--ink-3);opacity:.55}
@@ -264,9 +226,8 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .art{
   position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
-  background:var(--raise);border:1px solid var(--line);
+  background:var(--raise) center/cover no-repeat;border:1px solid var(--line);
 }
-.art img{width:100%;height:100%;object-fit:cover;display:block}
 .noart{display:flex;align-items:center;justify-content:center}
 .noart span{font-size:26px;font-weight:600;color:var(--ink-3)}
 
@@ -277,10 +238,7 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .month b{font-size:13px;font-weight:650}
 .month span{font-size:12px;color:var(--ink-3)}
 
-/* --- side ------------------------------------------------------------- */
 .cols{display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
-/* 340px, not 300: the rail carries three signal panels now, and at 300 the
-   wiki names and reader counts had nowhere to go. */
 @media(min-width:900px){.cols{grid-template-columns:1fr 340px}}
 .chg{padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .chg .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:7px}
@@ -288,25 +246,52 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .chg .lbl.mv{color:var(--moved)}
 .chg .lbl.rm{color:var(--ink-3)}
 
-/* --- signal rows (buzz + trending) ------------------------------------- */
-/* These live in the right rail, so the title gets the size and the supporting
-   figures wrap onto their own lines rather than being cut off by an ellipsis —
-   a truncated wiki name is unreadable, and the numbers are the whole point. */
 .wiki{padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .wiki .wtop{display:flex;align-items:baseline;gap:8px}
 .wiki .wn{font-size:14.5px;font-weight:600;line-height:1.3;min-width:0;overflow-wrap:anywhere}
 .wiki .ws{margin-left:auto;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
 .wiki .wd{font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--ink-3);margin-top:2px}
-/* One-line standfirst for a rail panel: enough to say what the list is without
-   eating the space the list needs. */
 .railnote{font-size:12px;line-height:1.5;color:var(--ink-3);margin:0 0 10px}
-/* Level bar. Purely a reading aid for the score already printed beside it —
-   it encodes nothing the number doesn't. */
+.detail{border:1px solid var(--line);border-radius:12px;background:var(--raise);padding:16px 18px;margin:0 0 12px}
+.dhead{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px;margin:0 0 26px}
+.art.dart{width:96px;flex:none;border-radius:10px}
+.art.dart span{font-size:30px}
+.dmain{min-width:0}
+.dmain h1{font-size:clamp(22px,3.4vw,32px);font-weight:650;letter-spacing:-.02em;margin:0;line-height:1.15}
+.dbadges{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px}
+.dbadges .tag.quiet{opacity:.45}
+.dbadges .tag i{font-style:normal;font-family:var(--mono)}
+#details h3{font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-2);margin:26px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.dmeta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:6px 0 0}
+.closed{display:inline-block;font-size:11px;color:var(--ink-3);text-decoration:none;
+  border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:0 0 22px}
+.closed:hover{color:var(--accent)}
+.srow{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:11px 0;font-size:13px;border-bottom:1px solid var(--line-soft)}
+.srow.quiet{opacity:.5}
+.sname{width:112px;flex:none;font-weight:600;font-size:14px}
+.sval{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.sval i{color:var(--ink-3);font-style:normal}
+.srel{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.srel b{color:var(--hot-2)}
+.snote{font-size:13px;line-height:1.65;color:var(--ink-2);margin:14px 0 0;max-width:74ch}
+.snote a{color:var(--accent)}
+@supports selector(:has(*)){
+  #details{display:none}
+  .wrap:has(.detail:target) .mainview{display:none}
+  .wrap:has(.detail:target) #details{display:block}
+  #details .detail{display:none}
+  #details .detail:target{display:block;border:0;background:transparent;padding:0}
+}
+.jump{text-decoration:none}
+.jump:hover{color:var(--accent);text-decoration:underline}
+.jump{text-decoration:none}
+.jump:hover{color:var(--accent);text-decoration:underline}
+
 .bar{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent)}
 .tag.hot{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
 .tag.fr{color:var(--ink-3)}
-/* Heat bands, always paired with the band's name in text. */
 .tag.b1,.ws.b1,.hs.b1{color:var(--hot-1)}
 .tag.b1{border-color:var(--hot-1);background:var(--hot-1-bg)}
 .tag.b2,.ws.b2,.hs.b2{color:var(--hot-2)}
@@ -319,15 +304,10 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .bar i.b2{background:var(--hot-2)}
 .bar i.b3{background:var(--hot-3)}
 .bar i.b4{background:var(--hot-4)}
-/* Buzz score in a schedule row: a figure, not a pill, so a column of them
-   reads as a column of numbers. */
 .hs{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
 
-/* --- method ----------------------------------------------------------- */
 .method{border-top:1px solid var(--line);padding-top:20px;font-size:13px;color:var(--ink-2);line-height:1.65}
 .method h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin:0 0 10px}
-/* Full width: the method block sits under a 1140px page, and a 74ch measure
-   left it visibly narrower than everything above it. */
 .method p{margin:0 0 10px}
 .method code{font-family:var(--mono);font-size:12px;color:var(--ink)}
 .empty{color:var(--ink-3);padding:14px 0}
@@ -396,8 +376,15 @@ function renderSchedule(
                 `${t.trend.domain} · trending ${t.trend.trendingScore.toFixed(2)}`,
               )}">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
             : ''
-          // Only spiking titles get a row tag. Tagging all 138 measured titles
-          // would make the marker meaningless.
+          // How many independent sources agree. Neutral, never a heat colour —
+          // the ramp owns red-to-green for magnitude, and agreement is a
+          // different dimension; one colour meaning two things dilutes both.
+          const agree =
+            t.attention && t.attention.rising.length > 1
+              ? `<span class="tag" title="${esc(
+                  `rising in: ${t.attention.rising.join(', ')}`,
+                )}">${t.attention.rising.length}&times;</span>`
+              : ''
           // Buzz replaced the Metascore column: most upcoming titles have no
           // Metascore, so it was a column of dashes, and the buzz number is the
           // thing worth scanning down. A dash means "not measured", NOT "cold".
@@ -412,12 +399,12 @@ function renderSchedule(
               )}">${t.buzz.points}</span>`
             : `<span class="r none" title="No buzz signal — no Wikipedia article, or too little traffic to read. Not the same as cold.">—</span>`
 
-          return `<a class="${ROW_CLASS}" href="${esc(t.url)}" target="_blank" rel="noreferrer"
+          return `<a class="${ROW_CLASS}" href="${esc(titleHref(t))}"
               data-type="${t.type}" data-alert="${alert ? 1 : 0}">
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
-            ${poster(t, art.get(t.id) ?? null, 'thumb')}
+            ${poster(t, art.has(t.id), 'thumb')}
             <span class="t">${esc(t.title)}${
-              tags || wiki ? `<span class="tags">${tags}${wiki}</span>` : ''
+              tags || wiki || agree ? `<span class="tags">${tags}${agree}${wiki}</span>` : ''
             }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
@@ -434,6 +421,115 @@ function renderSchedule(
     .join('')
 
   return header + body
+}
+
+const SOURCE_LABEL: Record<SignalSource, string> = {
+  wikipedia: 'Wikipedia',
+  youtube: 'YouTube',
+  news: 'Google News',
+  tmdb: 'TMDB',
+}
+
+const METRIC_LABEL: Record<string, string> = {
+  views: 'views/day',
+  articles: 'articles/day',
+  popularity: 'popularity',
+}
+
+const SOURCE_ORDER: SignalSource[] = ['wikipedia', 'youtube', 'news', 'tmdb']
+
+function anchorId(title: Title): string {
+  return `t${title.id}`
+}
+
+function renderDetails(titles: Title[], art: Art): string {
+  return titles
+    .map((t) => {
+      const attention = t.attention
+      const bySource = new Map((attention?.sources ?? []).map((sig) => [sig.source, sig]))
+      const rows = SOURCE_ORDER.filter((source) => bySource.has(source))
+        .map((source) => {
+          const sig = bySource.get(source)!
+          const hot = sig.phase === 'rising'
+          return `<div class="srow${hot ? '' : ' quiet'}">
+            <span class="sname">${SOURCE_LABEL[source]}</span>
+            <span class="tag ${hot ? 'hot' : ''}">${sig.phase}</span>
+            <span class="sval">${compact(sig.baseline)} &rarr; ${compact(sig.recent)} <i>${
+              METRIC_LABEL[sig.metric] ?? esc(sig.metric)
+            }</i></span>
+            <span class="srel"><b>${sig.relative}&times;</b> vs similar · ${sig.momentum}&times; wk · ${sig.days}d</span>
+          </div>`
+        })
+        .join('')
+
+      const badges = [
+        attention?.confirmed
+          ? `<span class="tag hot">confirmed · ${attention.rising.length} sources</span>`
+          : attention && attention.rising.length > 0
+            ? `<span class="tag hot">single source</span>`
+            : '',
+        t.buzz ? `<span class="tag">buzz ${t.buzz.points}</span>` : '',
+        t.trend
+          ? `<span class="tag">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
+          : '',
+
+        SOURCE_ORDER.filter((source) => bySource.has(source))
+          .map((source) => {
+            const sig = bySource.get(source)!
+            const rising = sig.phase === 'rising'
+            return `<span class="tag ${rising ? 'hot' : 'quiet'}">${SOURCE_LABEL[source]}${
+              rising ? ` <i>${sig.relative}&times;</i>` : ''
+            }</span>`
+          })
+          .join('') || '<span class="dmeta">no movement</span>',
+      ].join('')
+
+      const fandom = t.trend
+        ? `<h3>On Fandom</h3>
+           <p class="snote">${
+             t.trend.match === 'exact'
+               ? `This title's own wiki, <a href="https://${esc(t.trend.domain)}" target="_blank" rel="noreferrer">${esc(t.trend.domain)}</a>, is trending this week.`
+               : `Its franchise hub <a href="https://${esc(t.trend.domain)}" target="_blank" rel="noreferrer">${esc(t.trend.domain)}</a> is trending — which says the franchise is drawing an audience, not necessarily this title.`
+           } ${t.trend.pageviews14d.toLocaleString('en-US')} readers in 14 days, trending ${Math.round(t.trend.trendingScore * 100)}%${t.trend.isNew ? ' — first week in the trending list' : ''}.</p>`
+        : ''
+
+      return `<div class="detail" id="${anchorId(t)}">
+        <p><a class="closed" href="#">&larr; Back to the radar</a></p>
+        <div class="dhead">
+          ${poster(t, art.has(t.id), 'dart')}
+          <div class="dmain">
+            <h1>${esc(t.title)}</h1>
+            <p class="dmeta">${t.type === 'movie' ? 'Film' : 'TV'} · ${esc(fmtDateYear(t.releaseDate))}${
+              t.daysOut != null && t.daysOut >= 0 ? ` · in ${t.daysOut} days` : ''
+            }</p>
+            <div class="dbadges">${badges}</div>
+          </div>
+        </div>
+
+        <h3>Where it's trending</h3>
+        ${
+          rows ||
+          `<p class="snote">Nothing could be measured — no source had enough history. That is an absence of evidence, not evidence it is cold.</p>`
+        }
+        ${
+          rows
+            ? `<p class="snote">Each source is measured against <i>its own</i> recent normal, then against what titles the same distance from release are doing — so the ramp every title gets as it approaches release is already divided out. <b>Rising</b> means at least twice normal and still climbing week over week. A source is only listed once it has enough history to have an opinion.</p>`
+            : ''
+        }
+        ${fandom}
+        <p class="snote"><a href="https://www.fandom.com/search?query=${encodeURIComponent(t.title)}" target="_blank" rel="noreferrer">Search Fandom for this title &rarr;</a></p>
+      </div>`
+    })
+    .join('')
+}
+
+/** Where a title links to: its own detail block, further down the page.
+ *
+ * Deliberately never Metacritic. The outbound links (the Fandom wiki, a Fandom
+ * search) live inside the detail block, where there is room to label them.
+ */
+function titleHref(title: Title): string {
+  return `#${anchorId(title)}`
 }
 
 /** Heat band -> css class and human name. Four steps so a 34 and a 60 don't
@@ -484,9 +580,13 @@ function renderBuzz(titles: Title[], coverage: RadarOutput['buzz']): string {
       const cls = BAND_CLASS[b.band]
       const bandTag = `<span class="tag ${cls}">${BAND_LABEL[b.band]}</span>`
       return `<div class="wiki">
-        <div class="wtop"><span class="wn">${esc(t.title)}</span>${bandTag}${flag}
+        <div class="wtop"><span class="wn"><a class="jump" href="${esc(titleHref(t))}">${esc(t.title)}</a></span>${bandTag}${flag}
         <span class="ws ${cls}">${b.points}</span></div>
-        <div class="wd">+${compact(b.excess)}/day over normal · ${compact(b.baseline)} → ${compact(b.recent)} · ${b.momentum}× wk</div>
+        <div class="wd">+${compact(b.excess)}/day over normal · ${compact(b.baseline)} → ${compact(b.recent)} · ${b.momentum}× wk${
+          t.attention && t.attention.rising.length > 1
+            ? `<br>rising in ${esc(t.attention.rising.join(', '))}`
+            : ''
+        }</div>
         <div class="bar"><i class="${cls}" style="width:${b.points}%"></i></div>
       </div>`
     })
@@ -569,9 +669,6 @@ const SCRIPT = `
     if(choice!=='light'&&choice!=='dark')choice=null;
 
     function paint(){
-      // Stamp the container (which owns the tokens) AND the root, so the
-      // standalone page's canvas follows the toggle too rather than staying on
-      // whatever the OS said.
       [radar,document.documentElement].forEach(function(el){
         if(choice){el.setAttribute('data-mode',choice)}else{el.removeAttribute('data-mode')}
       });
@@ -581,9 +678,6 @@ const SCRIPT = `
     }
     paint();
 
-    // Without this the label goes stale when the OS theme changes after load:
-    // the colours would follow but the button would still offer the mode you
-    // are already in, so the first click would appear to do nothing.
     var onSystemChange=function(){ if(!choice) paint() };
     if(mq.addEventListener){mq.addEventListener('change',onSystemChange)}
     else if(mq.addListener){mq.addListener(onSystemChange)}
@@ -601,8 +695,7 @@ const SCRIPT = `
   var chips=root.querySelectorAll('[data-filter]');
   var items=root.querySelectorAll('.${ROW_CLASS}');
   var groups=root.querySelectorAll('.mgroup');
-  // Never let a selector mismatch blank the page: if the rows aren't found,
-  // leave the server-rendered markup exactly as it is.
+
   if(!items.length)return;
   function apply(f){
     items.forEach(function(c){
@@ -650,6 +743,7 @@ function renderBody(data: RadarOutput, art: Art): string {
   })
 
   return `<div class="radar"><div class="wrap">
+  <div class="mainview">
 
   <header class="top">
     <div>
@@ -725,6 +819,12 @@ function renderBody(data: RadarOutput, art: Art): string {
     <p style="color:var(--ink-3)">Data: neutron-api (metacritic) and Fandom's internal trending export. The schedule is ordered by date and nothing here ranks titles by demand — the wiki signal is attached as labelled evidence, and a title with no tag has no signal rather than a cold one.</p>
   </section>
 
+  </div><!-- /mainview -->
+
+  <section id="details">
+    ${renderDetails(data.titles, art)}
+  </section>
+
 </div></div>`
 }
 
@@ -733,7 +833,7 @@ export async function build(data: RadarOutput, outDir = path.join(ROOT, 'out')):
 
   const art = await collectArt(data)
   const body = renderBody(data, art)
-  const style = `<style>${CSS}</style>`
+  const style = `<style>${CSS}\n${artCSS(art)}</style>`
 
   // Fail loudly rather than shipping a page that renders blank. The filter
   // script hides any month group containing no visible rows, so if the rows it

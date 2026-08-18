@@ -11,12 +11,6 @@ function initials(title: string): string {
     .join('')
 }
 
-/** Poster art with a typographic stand-in.
- *
- * ~17% of titles have no art, and a cached thumbnail can 404 if the cache was
- * cleared between a run and a page load, so the fallback handles both the
- * missing-URL and failed-load cases. Art is an enhancement; the row must read
- * fine without it. */
 export function Poster({
   title,
   className = '',
