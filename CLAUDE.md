@@ -3,7 +3,7 @@
 Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
 [`README.md`](README.md); this is the fast path.
 
-- **Entrypoint:** `src/index.ts` — run with `npm run radar`.
+- **Entrypoint:** `src/index.ts` — run with `npm run scan`.
 - **Stack:** TypeScript on Node 20. **Zero runtime dependencies** (built-in
   `fetch`, `node:crypto`); `tsx` + `typescript` are devDependencies only. The
   server is raw `node:http`. Keep it that way.
@@ -14,7 +14,7 @@ Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
   export. Not committed, no fallback; the `/radar` skill pulls it fresh each run.
 - **Signals:** two, both attached rather than blended — `title.trend` (our own
   wiki traffic) and `title.buzz` (Wikipedia pageviews vs the title's own normal).
-- **Flags:** `--horizon N`, `--today YYYY-MM-DD`.
+- **Flags:** `--horizon N`, `--today YYYY-MM-DD`, `--publish`.
 - **Check:** `npm run typecheck`, `npm run web:build`.
 - **`npm run typecheck` does NOT cover `web/`.** The React app is typechecked by
   its own `tsc -b`, which runs as part of `npm run web:build`. So a broken
@@ -61,6 +61,39 @@ isn't the deleted score coming back:
 Those four properties are the whole defence. If you drop any of them — rank the
 schedule by points, default missing data to zero, or fold `fpScore` and `points`
 into one number — you have rebuilt the thing that was deleted.
+
+### Snapshot storage (`src/remote.ts`, `src/publish.ts`)
+
+- **Six documents, one folder each**: `{news,youtube,tmdb}/{date}/readings.json`,
+  `resolve/{date}/ids.json`, `trending/{week}/wikis.json`,
+  `radar/{date}/radar.json`. A folder per source because scriptlr resolves
+  `latest` per *folder* — sharing one would 404 every other file the moment a
+  single upload failed.
+- **The version segment is the date, unpadded**: `2026.8.9`, never `2026.08.09`
+  — scriptlr's regex is `(0|[1-9]\d*)` per component and rejects leading zeros
+  with a 400. Inside the JSON, dates stay ISO. `remote.versionFor()` is the only
+  place that converts; don't hand-write one.
+- **Each file holds the WHOLE store**, not a daily delta. The public deployment
+  has no list endpoint (`/apps/*` is on-prem only), so the dashboard cannot
+  enumerate versions — it reads `latest` once and needs everything in it.
+- **The diff baseline is fetched by explicit date, walking back from yesterday**,
+  never `latest` — `latest` becomes today's file the moment we publish, so a
+  second run would diff today against today. Same rule as `latest.json`.
+- **Never let a remote miss become an empty store.** A 404 falls through to the
+  local copy (so a first publish carries existing history); a *failed request*
+  throws and aborts the run; a document without a `readings` object throws.
+  Returning `{}` from any of those publishes one day over sixty, and YouTube and
+  TMDB history is not re-fetchable.
+- **`save()` refuses to write a store that shrank by more than
+  `SCRIPTLR.maxShrink`**, measured against local disk rather than against what
+  was loaded — if the remote read came back thin, the loaded store is thin too
+  and comparing it to itself proves nothing.
+- **The id caches are cron state, not a cache.** Losing `youtube-videos.json`
+  means re-running `search.list` at 100 quota units a title against a 10,000/day
+  budget — 234 titles exceeds the day's quota outright. `hydrateCaches()` only
+  fills files that are MISSING locally; it never overwrites work in progress.
+- **Publishing is opt-in (`--publish`) and never happens on a pinned `--today`**,
+  for the same reason that writes no snapshot.
 
 ## Gotchas
 
@@ -160,9 +193,30 @@ into one number — you have rebuilt the thing that was deleted.
   wipe that directory and the history is gone for good, not re-fetchable.
 - **Never fill a gap with zero.** Same lesson as the Wikipedia lag bug: absent
   is not zero. `store.series()` returns the days that exist and no others.
-- **The 7-day gate is load-bearing.** `SIGNALS.minHistoryDays` stops a
-  newly-added title reading as a spike against a two-point baseline. Don't lower
-  it to "get more results" — the results it withholds are noise.
+- **The baseline is adaptive, with a floor.** `measure()` uses as much history
+  as a series has, capped at `BUZZ.baselineDays` (28) and refused below
+  `BUZZ.minBaselineDays` (7); `SIGNALS.minHistoryDays` is derived from it so the
+  two can't drift. The floor was measured, not guessed — replaying 120 days of
+  real pageviews, a 7-day baseline sustains 72% of its fires against a 13%
+  control (5.3x lift) versus 80%/19% (4.3x) at 28 days. Shorter is less precise,
+  not broken. Don't drop the floor further to "get more results": at 3 days it's
+  68%, and a source with two points can't tell a spike from its own arrival.
+- **`days` must keep reaching the UI.** It's what distinguishes a reading built
+  on a week of history from one built on a month; without it a young, noisy
+  verdict is indistinguishable from a mature one.
+- **Google News counts headlines that name the title, not `<item>` tags.** The
+  feed carries headline and outlet per item; counting items measured the query,
+  not the title — "Animals" returns 50 articles of which 12 are about the film.
+  Three numbers are stored: `articles` (raw), `onTopic` (scored) and `outlets`.
+- **`outlets` is the honest number for a saturated day.** The feed stops at 100,
+  and Avengers: Doomsday already hits it while sitting at 55 distinct outlets.
+  Outlets also resist syndication — twelve sites re-running one wire story is
+  one story.
+- **Single-word titles stay excluded.** Headline filtering rescues some ("Animals"
+  → 6 real hits) but fails on common words: for "War" it keeps "A Cold War
+  Movie…", for "Him" it keeps "…makes him the most residuals". Both look exactly
+  like a hit. The 8-letter floor is gone — filtering handles short distinctive
+  phrases like "The Deb" — but the 2-word minimum is load-bearing.
 - **Google News must be queried one day at a time.** Counting `pubDate`s from a
   single feed undercounts older days (relevance-ordered, capped at 100) and
   manufactures spikes: one query said 36 articles for a day that windowed
@@ -185,6 +239,11 @@ into one number — you have rebuilt the thing that was deleted.
 - **Only Wikipedia gets 0-100 points.** The Odyssey anchor calibrates pageviews
   and is meaningless for article counts or TMDB popularity. Other sources report
   `relative`/`momentum`/`phase` only.
+- **The trailer behind a title is correctable**: `npm run trailer` lists what
+  each title is measured from, `set` pins a video and `clear` forgets it. A
+  pinned entry has `"pinned": true` and `resolveTrailers()` must keep skipping
+  it — an automatic search silently overwriting a human correction is the whole
+  failure this guards against.
 - **YouTube views are cumulative and must be differenced** before scoring; news
   articles and TMDB popularity are already rates. Getting this backwards
   produces nonsense either way.

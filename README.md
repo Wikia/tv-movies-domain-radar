@@ -16,9 +16,9 @@ neutron-api ─▶ fetch coming-soon calendar
 
 ```bash
 npm install
-npm run radar                          # full run, writes out/radar.json
-npm run radar -- --horizon 60          # narrower window
-npm run radar -- --today 2026-08-12    # pin the date for a reproducible run
+npm run scan                          # full run, writes out/radar.json
+npm run scan -- --horizon 60          # narrower window
+npm run scan -- --today 2026-08-12    # pin the date for a reproducible run
 ```
 
 No API keys, no `.env`, no VPN. The pipeline has **zero runtime dependencies** —
@@ -455,13 +455,33 @@ Measured live: one unwindowed query reported 36 articles for *Coyote vs. Acme*
 on 2026-08-12; day-windowed queries over the same period found **320**.
 `after:`/`before:` are respected, so a windowed query returns that day only.
 
+**Three numbers per title per day**, because a raw item count measures the
+*query*, not the title:
+
+| field | meaning |
+|---|---|
+| `articles` | everything the query returned — kept for continuity, and so the on-topic share stays inspectable |
+| `onTopic` | headlines that actually name the title — **this is what's scored** |
+| `outlets` | distinct publications among those |
+
+The feed carries a headline and an outlet on every item, so all three cost the
+same single request. Measured on one day: *Star Wars: Starfighter* 45 articles →
+38 on-topic; *Animals* 50 → 12.
+
 Two limits, both recorded rather than hidden:
 
 - **Saturates at 100/day.** A day at the cap is stored with `capped: 1` so
-  nothing downstream reads it as exact.
-- **Generic titles are declined.** A quoted phrase is still a phrase —
-  *"Dreams in Nightmares"* returned articles from 2023. Titles under two words
-  or eight letters are skipped and counted in the log.
+  nothing downstream reads it as exact. `outlets` is the more honest number for
+  those days — *Avengers: Doomsday* hits the 100-article ceiling while sitting
+  at 55 distinct outlets — and it also resists syndication, since twelve sites
+  re-running one wire story is one story.
+- **Single-word titles are declined.** Headline filtering rescues some of them —
+  *Animals* yields 6 hits that really are the Ben Affleck thriller — but it
+  fails on common words: for *War* it keeps *"A Cold War Movie…"*, for *Him*
+  *"…makes him the most residuals"*. Both look exactly like a hit, so the phrase
+  has to carry more than one word. The old eight-letter floor is gone: filtering
+  handles short but distinctive phrases like *The Deb*, which it used to throw
+  away.
 
 Backfill is **budgeted** (`newsQueriesPerRun`, 600) and ordered nearest-release
 first: seeding the whole calendar at once is thousands of requests and took
@@ -481,6 +501,54 @@ Quota (10,000 units/day) drives the design: `search.list` costs 100 units so
 trailer resolution is cached forever in `data/youtube-videos.json` and budgeted
 per run; `videos.list` costs 1 unit and batches 50 ids, so polling the whole
 calendar costs about **5 units/day**.
+
+#### Which video a title is measured from
+
+One video per title: the official trailer, found once with
+`"{title} {year} official trailer"`, filtered to results whose title contains
+the title *and* matches `/trailer|teaser/`, preferring a channel that doesn't
+look like an aggregator. Only `views` is scored — `likes` and `comments` are
+recorded because the same call returns them, but nothing reads them yet. Views
+are a lifetime counter, so the signal is the *difference* between consecutive
+readings: a trailer sitting at 34M scores nothing, one adding 200k/day above its
+own normal scores.
+
+The resolved id lives in `data/youtube-videos.json`, keyed by
+`title|type|year`:
+
+```json
+"Here the Whole Time|movie|2026": {
+  "videoId": "1Xs_N_qZ3LQ",
+  "channel": "IGMDb",
+  "videoTitle": "Here the Whole Time (2026) Trailer [ENG SUB]",
+  "checked": "2026-08-18"
+}
+```
+
+Search is right most of the time, and "most of the time" is not good enough to
+present as evidence — an aggregator re-upload or the wrong film's teaser
+produces a real-looking curve for the wrong thing. So the choice is correctable
+by hand:
+
+```bash
+npm run trailer                      # every title and the video behind it
+npm run trailer -- --missing         # titles with no video at all
+npm run trailer -- set "Wicked" https://youtu.be/dQw4w9WgXcQ
+npm run trailer -- clear "Wicked"    # forget it; the next scan re-resolves
+```
+
+- `set` accepts a bare id or any watch/`youtu.be`/embed/shorts URL, and
+  **verifies the video exists** before writing — an 11-character string is a
+  plausible id, which is not the same as a real video.
+- A title query must match exactly one title; ambiguity is refused with the
+  candidates listed rather than guessed at.
+- A pinned entry carries `"pinned": true` and is **never re-resolved** by a
+  later run, so an automatic search can't undo a human correction.
+- Readings already recorded against the old video are kept. Because the daily
+  rate is a difference between consecutive readings, switching shows up as one
+  gap day rather than a fake spike.
+- Pins travel with the rest of the id caches to `resolve/{date}/ids.json`, so a
+  cron on a fresh container inherits them.
 
 ### TMDB — needs `TMDB_ACCESS_TOKEN`
 

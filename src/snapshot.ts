@@ -1,6 +1,8 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { ROOT } from './config.js'
+import { ROOT, SCRIPTLR } from './config.js'
+import { fetchRadar } from './publish.js'
+import * as remote from './remote.js'
 import type { Change, Title } from './types.js'
 
 const SNAPSHOT_DIR = path.join(ROOT, 'data', 'snapshots')
@@ -31,6 +33,21 @@ const KEEP_DAYS = 60
 // day report nothing.
 export async function loadPrevious(today: Date): Promise<Snapshot | null> {
   const todayKey = today.toISOString().slice(0, 10)
+
+  // Remote baselines are fetched by EXPLICIT date, walking back from yesterday —
+  // never `latest`, which becomes today's file the moment we publish and would
+  // make a second run diff today against today. Published radar.json carries the
+  // full title list, so it doubles as the snapshot.
+  if (remote.canRead()) {
+    for (let back = 1; back <= SCRIPTLR.baselineLookbackDays; back++) {
+      const day = new Date(today.getTime() - back * 86_400_000).toISOString().slice(0, 10)
+      const previous = await fetchRadar(day)
+      if (previous) {
+        return { takenAt: previous.generatedAt, entries: toEntries(previous.titles) }
+      }
+    }
+    return null
+  }
 
   const earlier = (await readdir(SNAPSHOT_DIR).catch((): string[] => []))
     .map((file) => DATED.exec(file)?.[1])

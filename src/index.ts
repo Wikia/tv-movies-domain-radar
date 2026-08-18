@@ -7,8 +7,10 @@ import { parseArgs } from 'node:util'
 import * as alerts from './alerts.js'
 import * as artifact from './artifact.js'
 import * as buzz from './buzz.js'
-import { BUZZ, HORIZON_DAYS, ROOT, SIGNALS, TMDB_TOKEN, YOUTUBE_KEY } from './config.js'
+import { BUZZ, HORIZON_DAYS, ROOT, SCRIPTLR, SIGNALS, TMDB_TOKEN, YOUTUBE_KEY } from './config.js'
 import * as posters from './posters.js'
+import * as publish from './publish.js'
+import * as remote from './remote.js'
 import { applyDates, byReleaseDate } from './schedule.js'
 import * as snapshot from './snapshot.js'
 import * as fandom from './sources/fandom.js'
@@ -34,6 +36,7 @@ async function main(): Promise<void> {
     options: {
       horizon: { type: 'string' },
       today: { type: 'string' },
+      publish: { type: 'boolean' },
     },
   })
 
@@ -45,6 +48,18 @@ async function main(): Promise<void> {
   }
 
   const pinned = Boolean(values.today) && values.today !== new Date().toISOString().slice(0, 10)
+
+  // Publishing is opt-in so a local run can never overwrite shared history, and
+  // a pinned --today never publishes for the same reason it writes no snapshot:
+  // today's numbers filed under a past date would corrupt the series for good.
+  const publishing = Boolean(values.publish) && !pinned
+  if (publishing && !remote.canWrite()) {
+    throw new Error('--publish needs SCRIPTLR_WRITE_URL')
+  }
+  if (remote.canRead()) {
+    const filled = await publish.hydrateCaches()
+    log(`[remote] reading from ${SCRIPTLR.readUrl}${filled ? ` · seeded ${filled} id caches` : ''}`)
+  }
 
   const upcoming: Title[] = []
   for (const type of TYPES) {
@@ -67,7 +82,9 @@ async function main(): Promise<void> {
     log('[diff] no previous snapshot — baseline established, no change alerts')
   }
 
-  const wikis = await fandom.load()
+  let wikis = await fandom.load()
+  if (wikis.length === 0) wikis = await publish.loadTrending()
+  else if (publishing) await publish.publishTrending(wikis)
   let trendingReport: TrendingReport | null = null
   if (wikis.length === 0) {
     log(`[trend] no first-party export at data/fandom_trending.csv — running without ` + `the wiki signal (see README "First-party data sync")`)
@@ -87,7 +104,7 @@ async function main(): Promise<void> {
   const buzzCoverage = { resolved: articles.size, scored, spiking }
   log(`[buzz] ${articles.size}/${titles.length} titles resolved to a Wikipedia article, ` + `${scored} scored, ${spiking} spiking`)
 
-  await collectSignals(titles, today, pinned)
+  await collectSignals(titles, today, pinned, publishing)
 
   const attention = signals.attach(titles, {
     news: await store.load('news'),
@@ -143,11 +160,22 @@ async function main(): Promise<void> {
   }
   log(`[out] wrote ${titles.length} titles to out/radar.json`)
 
+  if (publishing) {
+    await publish.publishRadar(output)
+    await publish.publishCaches(output.today)
+    log(`[remote] published ${remote.versionFor(output.today)} to ${SCRIPTLR.writeUrl}`)
+  }
+
   await artifact.build(output)
   log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
 }
 
-async function collectSignals(titles: Title[], today: Date, pinned: boolean): Promise<void> {
+async function collectSignals(
+  titles: Title[],
+  today: Date,
+  pinned: boolean,
+  publishing: boolean,
+): Promise<void> {
   if (pinned) {
     log('[signal] --today is pinned — not recording snapshots')
     return
@@ -156,8 +184,8 @@ async function collectSignals(titles: Title[], today: Date, pinned: boolean): Pr
   try {
     const store0 = await store.load('news')
     const result = await news.collect(titles, today, store0)
-    await store.save('news', store0, result.readings, today)
-    log(`[news] ${result.queried} day-queries, ${result.pending} still to backfill, ` + `${result.skipped} too generic to search, ${result.failed} failed · ` + `${store.mature(store0, 'articles')} titles with ${SIGNALS.minHistoryDays}+ days`)
+    await store.save('news', store0, result.readings, today, publishing)
+    log(`[news] ${result.queried} day-queries, ${result.pending} still to backfill, ` + `${result.skipped} too generic to search, ${result.failed} failed · ` + `${store.mature(store0, 'onTopic')} titles with ${SIGNALS.minHistoryDays}+ days`)
   } catch (error) {
     log(`[news] skipped: ${error instanceof Error ? error.message : String(error)}`)
   }
@@ -169,7 +197,7 @@ async function collectSignals(titles: Title[], today: Date, pinned: boolean): Pr
       const cache = await youtube.resolveTrailers(titles, today)
       const store0 = await store.load('youtube')
       const result = await youtube.collect(titles, today, cache)
-      await store.save('youtube', store0, result.readings, today)
+      await store.save('youtube', store0, result.readings, today, publishing)
       log(`[yt] ${result.resolved} trailers resolved, ${result.polled} polled · ` + `${store.mature(store0, 'views')} titles with ${SIGNALS.minHistoryDays}+ days`)
     } catch (error) {
       log(`[yt] skipped: ${error instanceof Error ? error.message : String(error)}`)
@@ -183,7 +211,7 @@ async function collectSignals(titles: Title[], today: Date, pinned: boolean): Pr
       const cache = await tmdb.resolveIds(titles, today)
       const store0 = await store.load('tmdb')
       const result = await tmdb.collect(titles, today, cache)
-      await store.save('tmdb', store0, result.readings, today)
+      await store.save('tmdb', store0, result.readings, today, publishing)
       log(`[tmdb] ${result.resolved} ids resolved, ${result.polled} polled · ` + `${store.mature(store0, 'popularity')} titles with ${SIGNALS.minHistoryDays}+ days`)
     } catch (error) {
       log(`[tmdb] skipped: ${error instanceof Error ? error.message : String(error)}`)

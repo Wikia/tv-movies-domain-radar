@@ -19,6 +19,12 @@ export const TRENDING = {
 export const BUZZ = {
   recentDays: 3,
   baselineDays: 28,
+  // The baseline grows with the series: a source reports once it has this many
+  // days and widens to baselineDays as history accrues. Measured on 120 days of
+  // real pageviews — a 7-day baseline sustains 72% of its fires against a 13%
+  // control (5.3x lift) vs 80%/19% (4.3x) at 28 days. Shorter is less precise,
+  // not broken, and waiting a month for any signal at all is worse.
+  minBaselineDays: 7,
   minBaselineViews: 50,
   spikeRatio: 2,
   anchorExcess: 1_200_000,
@@ -38,10 +44,16 @@ export const WIKI_USER_AGENT =
   'tv-movies-domain-radar/0.1 (https://github.com/fandom; tv-movies-domain@fandom.com)'
 
 export const SIGNALS = {
-  minHistoryDays: 7,
+  // Derived, so it can't drift from what measure() actually needs.
+  minHistoryDays: BUZZ.minBaselineDays + BUZZ.recentDays,
   keepDays: 60,
-  newsBackfillDays: 10,
-  newsQueriesPerRun: 600,
+  // Google News is the only source that can be asked about a past day, so its
+  // history can be seeded rather than waited for. Set to cover a full baseline
+  // window so it matures without calendar time.
+  newsBackfillDays: 35,
+  // Steady state is one new day per title. Raise NEWS_QUERY_BUDGET for a
+  // one-off seeding run; the default keeps ordinary runs quick and polite.
+  newsQueriesPerRun: Number(process.env.NEWS_QUERY_BUDGET ?? 600),
   newsDailyCap: 100,
   concurrency: 4,
   confirmAtSources: 2,
@@ -49,6 +61,23 @@ export const SIGNALS = {
 
 export const YOUTUBE_KEY = process.env.YOUTUBE_API_KEY ?? ''
 export const TMDB_TOKEN = process.env.TMDB_ACCESS_TOKEN ?? ''
+
+// Snapshot storage (pandora/scriptlr). Unset = the pipeline stays entirely
+// local, exactly as before. Uploads exist only on the on-prem deployment;
+// the public GKE one is read-only, hence two URLs.
+export const SCRIPTLR = {
+  appId: process.env.SCRIPTLR_APP_ID ?? 'tv-movies-radar',
+  readUrl: process.env.SCRIPTLR_READ_URL ?? '',
+  writeUrl: process.env.SCRIPTLR_WRITE_URL ?? '',
+  token: process.env.SCRIPTLR_TOKEN ?? '',
+  retries: 3,
+  // Refuse to publish a store that lost more than this share of its titles
+  // against the one we just read. A publish that shrinks the history is the one
+  // unrecoverable mistake here.
+  maxShrink: 0.2,
+  // How far back to look for a diff baseline when yesterday is missing.
+  baselineLookbackDays: 7,
+} as const
 
 export const API_BASE = process.env.NEUTRON_API_BASE ?? 'https://backend.metacritic.com'
 

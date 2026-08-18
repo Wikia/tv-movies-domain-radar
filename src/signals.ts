@@ -11,7 +11,7 @@ const SOURCES: {
   cumulative: boolean
   minBaseline: number
 }[] = [
-  { source: 'news', store: 'news', metric: 'articles', cumulative: false, minBaseline: 2 },
+  { source: 'news', store: 'news', metric: 'onTopic', cumulative: false, minBaseline: 2 },
   { source: 'youtube', store: 'youtube', metric: 'views', cumulative: true, minBaseline: 50 },
   { source: 'tmdb', store: 'tmdb', metric: 'popularity', cumulative: false, minBaseline: 1 },
 ]
