@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { Buzz } from './components/Buzz'
 import { Changes } from './components/Changes'
 import { Tile } from './components/Primitives'
+import { Trending } from './components/Trending'
 import { Schedule, type Filter } from './components/Schedule'
 import { ThemeToggle } from './components/ThemeToggle'
 import { formatTimestamp } from './lib/format'
@@ -97,11 +99,13 @@ export default function App() {
             active={filter === 'changed'}
             onClick={() => toggle('changed')}
           />
+          {data.buzz && <Tile label="Spiking" value={data.buzz.spiking} />}
+          {data.trending && <Tile label="Wikis trending" value={data.trending.wikis} />}
           <ThemeToggle />
         </div>
       </header>
 
-      <div className="grid items-start gap-11 lg:grid-cols-[1fr_300px]">
+      <div className="grid items-start gap-11 lg:grid-cols-[1fr_340px]">
         <Schedule
           titles={data.titles}
           horizonDays={data.horizonDays}
@@ -109,22 +113,58 @@ export default function App() {
           onFilter={setFilter}
           reasons={reasons}
         />
-        <Changes changes={data.changes} />
+        {/* Buzz sits ABOVE the change log: the log runs to dozens of rows on a
+            busy day (mostly "dropped", which is audit trail rather than news)
+            and pushed the signal panel below the fold. */}
+        <div className="flex flex-col gap-11">
+          <Buzz titles={data.titles} coverage={data.buzz} total={data.counts.upcoming} />
+          <Trending report={data.trending} />
+          <Changes changes={data.changes} />
+        </div>
       </div>
 
       <section className="mt-12 border-t border-line pt-5 text-[13px] leading-relaxed text-ink-2">
         <h2 className="section-label mb-2.5 text-ink">How to read this</h2>
-        <p className="max-w-[74ch]">
+        <p>
           The full forward calendar of film and TV releases from the Metacritic catalog, in date
           order. <b className="text-ink">Changed</b> titles are ones added to the calendar or moved
           since the previous run — that comes from diffing against our own stored snapshot, and it's
           a signal the upstream API doesn't expose.
         </p>
-        <p className="mt-2.5 max-w-[74ch] text-ink-3">
-          <span className="figure">MC</span> is the Metascore where one exists; most titles have
-          none before release, which is normal rather than missing data. This tool deliberately
-          carries no demand or popularity ranking — the available signals covered too few titles,
-          and none of the TV ones, to rank on honestly.
+        <p className="mt-2.5">
+          <b className="text-ink">Buzz</b> scores the <i>size of the surge</i> in Wikipedia
+          pageviews — daily views beyond what a title the same
+          distance from release would be getting anyway — so a big name sitting at its normal level
+          scores nothing. The scale is anchored on a real event:{' '}
+          <b className="text-ink">100 = The Odyssey's peak of 1.2M views/day</b>. For calibration,
+          Superman (2025) would score 93, Avatar: Fire and Ash 90, Wicked: For Good 82. An ordinary
+          trailer drop lands in the 40s–60s, so a week with nothing in red is the scale working,
+          not a fault. The ramp runs <span className="text-hot-4">quiet</span> →{' '}
+          <span className="text-hot-3">notable</span> → <span className="text-hot-2">strong</span> →{' '}
+          <span className="text-hot-1">exceptional</span>, and the score is always shown beside the
+          colour. <b className="text-ink">Rising</b> means at least twice normal <i>and still
+          climbing week over week</i>; <b className="text-ink">fading</b> means still elevated, but
+          the event has passed.
+        </p>
+        <p className="mt-2.5">
+          <b className="text-ink">Trending on Fandom</b> is our own weekly wiki traffic
+          {data.trending?.week ? ` (week of ${data.trending.week})` : ''}. A{' '}
+          <b className="text-ink">wiki hot</b> tag means the title's own wiki is trending;{' '}
+          <b className="text-ink">franchise hot</b> means its franchise hub is — which says the
+          franchise is drawing an audience, not this title. The side panel lists trending wikis
+          with <i>no</i> upcoming release behind them, which is where a back-catalogue surge shows
+          up.
+        </p>
+        <p className="mt-2.5">
+          The <b className="text-ink">Buzz</b> column replaced the Metascore: almost nothing has a
+          Metascore before release, so it was a column of dashes. A dash there now means{' '}
+          <i>not measured</i> — no Wikipedia article, or too little traffic to read — which is not
+          the same as cold.
+        </p>
+        <p className="mt-2.5 text-ink-3">
+          The schedule is ordered by date and nothing here ranks titles by demand — both signals are
+          attached as labelled evidence, and a title with no tag has <i>no signal</i> rather than a
+          cold one.
         </p>
       </section>
     </div>

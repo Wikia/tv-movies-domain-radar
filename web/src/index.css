@@ -21,6 +21,15 @@
   --c-accent: #b45309;
   --c-up: #15803d;
   --c-moved: #1d4ed8;
+  /* Heat bands. Two coloured steps only, and validated rather than eyeballed:
+     red+amber clear colourblind separation (deutan ΔE 24); adding orange or
+     green does not, since red-orange-yellow are neighbouring hues and
+     red-green is the classic deutan collision. Amber is sub-3:1 on this light
+     ground, so both always ship WITH the band's name in text. */
+  --c-hot-1: #b4232a; /* exceptional */
+  --c-hot-2: #e2622a; /* strong */
+  --c-hot-3: #eda100; /* notable */
+  --c-hot-4: #008300; /* quiet */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -36,6 +45,10 @@
     --c-accent: #fbbf24;
     --c-up: #4ade80;
     --c-moved: #93b4ff;
+    --c-hot-1: #ef4444;
+    --c-hot-2: #fb923c;
+    --c-hot-3: #fde047;
+    --c-hot-4: #4ade80;
   }
 }
 
@@ -51,6 +64,10 @@
   --c-accent: #fbbf24;
   --c-up: #4ade80;
   --c-moved: #93b4ff;
+  --c-hot-1: #ef4444;
+  --c-hot-2: #fb923c;
+  --c-hot-3: #fde047;
+  --c-hot-4: #4ade80;
 }
 
 @theme inline {
@@ -66,6 +83,10 @@
   --color-accent: var(--c-accent);
   --color-up: var(--c-up);
   --color-moved: var(--c-moved);
+  --color-hot-1: var(--c-hot-1);
+  --color-hot-2: var(--c-hot-2);
+  --color-hot-3: var(--c-hot-3);
+  --color-hot-4: var(--c-hot-4);
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
     sans-serif;

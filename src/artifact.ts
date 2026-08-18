@@ -17,9 +17,18 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { ranked } from './buzz.js'
 import { ROOT } from './config.js'
 import { posterDataUri } from './posters.js'
-import type { Alert, AlertReason, Change, RadarOutput, Title } from './types.js'
+import type {
+  Alert,
+  AlertReason,
+  Buzz,
+  Change,
+  RadarOutput,
+  Title,
+  TrendingReport,
+} from './types.js'
 
 /** Keep the published page comfortably inside the 16 MB artifact cap. */
 const INLINE_BUDGET = 7_000_000
@@ -34,6 +43,10 @@ const ROW_CLASS = 'row'
 const REASON_LABEL: Record<AlertReason, string> = {
   'newly-added': 'new on calendar',
   'date-changed': 'date moved',
+  // The row already carries a wiki/franchise tag from title.trend, so this
+  // reason would render the same fact twice. Blank here, and the alert filter
+  // still finds the row via data-alert.
+  'wiki-trending': '',
 }
 
 function esc(value: string): string {
@@ -114,6 +127,17 @@ const CSS = `
   --ink:#1A1917; --ink-2:#57534E; --ink-3:#8C8681;
   --accent:#B45309; --accent-bg:rgba(180,83,9,.10);
   --up:#15803D; --moved:#1D4ED8; --moved-bg:rgba(29,78,216,.09);
+  /* Heat ramp: quiet -> notable -> strong -> exceptional.
+     Steps are validated against THIS surface, not eyeballed — the obvious
+     green/yellow/orange/red picks fail adjacent separation (a plain
+     #ea580c orange sits ΔE 1.6 from #d97706 amber under deutan, and 6.7 even
+     with full colour vision). These four clear the gates on light: worst
+     adjacent deutan ΔE 11.9, normal-vision 15.1. Yellow is sub-3:1 here, so
+     every band ships with its number and name in text. */
+  --hot-1:#b4232a; --hot-1-bg:rgba(180,35,42,.10);   /* exceptional */
+  --hot-2:#e2622a; --hot-2-bg:rgba(226,98,42,.12);   /* strong */
+  --hot-3:#eda100; --hot-3-bg:rgba(237,161,0,.14);   /* notable */
+  --hot-4:#008300; --hot-4-bg:rgba(0,131,0,.10);     /* quiet */
   --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
 }
@@ -124,6 +148,14 @@ const CSS = `
     --ink:#F5F4F2; --ink-2:#A8A29E; --ink-3:#78716C;
     --accent:#FBBF24; --accent-bg:rgba(245,158,11,.14);
     --up:#4ADE80; --moved:#93B4FF; --moved-bg:rgba(147,180,255,.13);
+    /* Dark steps: re-picked, not lightened versions of the light ones. On a
+       dark ground every step must clear 3:1, which pushes orange and red
+       together — #eb6834 sits ΔE 5.6 from #e66767. These four pass: worst
+       adjacent normal-vision ΔE 16.2, protan 8.2. */
+    --hot-1:#ef4444; --hot-1-bg:rgba(239,68,68,.16);
+    --hot-2:#fb923c; --hot-2-bg:rgba(251,146,60,.16);
+    --hot-3:#fde047; --hot-3-bg:rgba(253,224,71,.16);
+    --hot-4:#4ade80; --hot-4-bg:rgba(74,222,128,.14);
   }
 }
 .radar[data-mode="dark"]{
@@ -132,6 +164,10 @@ const CSS = `
   --ink:#F5F4F2; --ink-2:#A8A29E; --ink-3:#78716C;
   --accent:#FBBF24; --accent-bg:rgba(245,158,11,.14);
   --up:#4ADE80; --moved:#93B4FF; --moved-bg:rgba(147,180,255,.13);
+  --hot-1:#ef4444; --hot-1-bg:rgba(239,68,68,.16);
+  --hot-2:#fb923c; --hot-2-bg:rgba(251,146,60,.16);
+  --hot-3:#fde047; --hot-3-bg:rgba(253,224,71,.16);
+  --hot-4:#4ade80; --hot-4-bg:rgba(74,222,128,.14);
 }
 
 .radar *{box-sizing:border-box}
@@ -194,7 +230,7 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   grid-template-columns:64px 28px 1fr 40px 40px;
 }
 @media(min-width:640px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 40px 88px}}
-@media(min-width:1024px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 160px 40px 88px}}
+@media(min-width:1024px){.rowhead,.row{grid-template-columns:64px 28px 1fr 40px 128px 40px 88px}}
 @media(max-width:1023px){.cg{display:none}}
 @media(max-width:639px){.co{display:none}}
 
@@ -214,7 +250,10 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .row .k{font-size:10.5px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em}
 .row .g{font-size:12px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .o{font-family:var(--mono);font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
-.mc{font-family:var(--mono);font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+/* A measured-but-static title still shows its number, just quieter, so the
+   column reads as "rising titles stand out" rather than "everything is lit". */
+.hs.faint{opacity:.65;font-weight:400}
+.hs.zero{color:var(--ink-3)}
 .none{font-family:var(--mono);font-size:12px;color:var(--ink-3);opacity:.55}
 .tags{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
 .tag{font-size:10px;padding:1px 6px;border-radius:20px;border:1px solid var(--line);color:var(--ink-3);white-space:nowrap}
@@ -240,17 +279,56 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* --- side ------------------------------------------------------------- */
 .cols{display:grid;grid-template-columns:1fr;gap:44px;align-items:start}
-@media(min-width:900px){.cols{grid-template-columns:1fr 300px}}
+/* 340px, not 300: the rail carries three signal panels now, and at 300 the
+   wiki names and reader counts had nowhere to go. */
+@media(min-width:900px){.cols{grid-template-columns:1fr 340px}}
 .chg{padding:7px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
 .chg .lbl{font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-right:7px}
 .chg .lbl.new{color:var(--up)}
 .chg .lbl.mv{color:var(--moved)}
 .chg .lbl.rm{color:var(--ink-3)}
 
+/* --- signal rows (buzz + trending) ------------------------------------- */
+/* These live in the right rail, so the title gets the size and the supporting
+   figures wrap onto their own lines rather than being cut off by an ellipsis —
+   a truncated wiki name is unreadable, and the numbers are the whole point. */
+.wiki{padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.wiki .wtop{display:flex;align-items:baseline;gap:8px}
+.wiki .wn{font-size:14.5px;font-weight:600;line-height:1.3;min-width:0;overflow-wrap:anywhere}
+.wiki .ws{margin-left:auto;font-family:var(--mono);font-size:13px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.wiki .wd{font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--ink-3);margin-top:2px}
+/* One-line standfirst for a rail panel: enough to say what the list is without
+   eating the space the list needs. */
+.railnote{font-size:12px;line-height:1.5;color:var(--ink-3);margin:0 0 10px}
+/* Level bar. Purely a reading aid for the score already printed beside it —
+   it encodes nothing the number doesn't. */
+.bar{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.tag.hot{color:var(--accent);border-color:var(--accent);background:var(--accent-bg)}
+.tag.fr{color:var(--ink-3)}
+/* Heat bands, always paired with the band's name in text. */
+.tag.b1,.ws.b1,.hs.b1{color:var(--hot-1)}
+.tag.b1{border-color:var(--hot-1);background:var(--hot-1-bg)}
+.tag.b2,.ws.b2,.hs.b2{color:var(--hot-2)}
+.tag.b2{border-color:var(--hot-2);background:var(--hot-2-bg)}
+.tag.b3,.ws.b3,.hs.b3{color:var(--hot-3)}
+.tag.b3{border-color:var(--hot-3);background:var(--hot-3-bg)}
+.tag.b4,.ws.b4,.hs.b4{color:var(--hot-4)}
+.tag.b4{border-color:var(--hot-4);background:var(--hot-4-bg)}
+.bar i.b1{background:var(--hot-1)}
+.bar i.b2{background:var(--hot-2)}
+.bar i.b3{background:var(--hot-3)}
+.bar i.b4{background:var(--hot-4)}
+/* Buzz score in a schedule row: a figure, not a pill, so a column of them
+   reads as a column of numbers. */
+.hs{font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
+
 /* --- method ----------------------------------------------------------- */
 .method{border-top:1px solid var(--line);padding-top:20px;font-size:13px;color:var(--ink-2);line-height:1.65}
 .method h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin:0 0 10px}
-.method p{margin:0 0 10px;max-width:74ch}
+/* Full width: the method block sits under a 1140px page, and a 74ch measure
+   left it visibly narrower than everything above it. */
+.method p{margin:0 0 10px}
 .method code{font-family:var(--mono);font-size:12px;color:var(--ink)}
 .empty{color:var(--ink-3);padding:14px 0}
 `
@@ -294,7 +372,7 @@ function renderSchedule(
   const header = `<div class="rowhead">
     <span>Date</span><span></span><span>Title</span><span>Type</span>
     <span class="cg">Genres</span>
-    <span class="r" title="Metascore — usually absent before release">MC</span>
+    <span class="r" title="Buzz — Wikipedia attention vs this title's own normal. 50 is normal.">Buzz</span>
     <span class="co r">Out</span>
   </div>`
 
@@ -304,24 +382,46 @@ function renderSchedule(
         .map((t) => {
           const alert = alerted.get(t.id)
           const tags = (alert?.reasons ?? [])
+            .filter((reason) => REASON_LABEL[reason] !== '')
             .map(
               (reason) =>
                 `<span class="tag ${reason === 'newly-added' ? 'up' : 'moved'}">${esc(REASON_LABEL[reason])}</span>`,
             )
             .join('')
-          const mc =
-            t.criticScore != null
-              ? `<span class="r mc">${t.criticScore}</span>`
-              : `<span class="r none" title="No Metascore yet — normal before release">—</span>`
+          // A franchise-level tie says the franchise hub is hot, not this
+          // title — label it as such rather than letting it read as a
+          // title-level signal.
+          const wiki = t.trend
+            ? `<span class="tag ${t.trend.match === 'exact' ? 'hot' : 'fr'}" title="${esc(
+                `${t.trend.domain} · trending ${t.trend.trendingScore.toFixed(2)}`,
+              )}">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
+            : ''
+          // Only spiking titles get a row tag. Tagging all 138 measured titles
+          // would make the marker meaningless.
+          // Buzz replaced the Metascore column: most upcoming titles have no
+          // Metascore, so it was a column of dashes, and the buzz number is the
+          // thing worth scanning down. A dash means "not measured", NOT "cold".
+          // A 0 means measured with no surge at all. Painting it a band colour
+          // implies a signal that isn't there, so zero stays neutral.
+          const buzzTone = t.buzz && t.buzz.points > 0 ? BAND_CLASS[t.buzz.band] : 'zero'
+          const buzzCell = t.buzz
+            ? `<span class="r hs ${buzzTone}${t.buzz.spiking ? '' : ' faint'}" title="${esc(
+                `Buzz ${t.buzz.points}/100 · ${BAND_LABEL[t.buzz.band]}${
+                  t.buzz.spiking ? ' · rising' : ''
+                } — +${t.buzz.excess} views/day over normal (${t.buzz.baseline} → ${t.buzz.recent})`,
+              )}">${t.buzz.points}</span>`
+            : `<span class="r none" title="No buzz signal — no Wikipedia article, or too little traffic to read. Not the same as cold.">—</span>`
 
           return `<a class="${ROW_CLASS}" href="${esc(t.url)}" target="_blank" rel="noreferrer"
               data-type="${t.type}" data-alert="${alert ? 1 : 0}">
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
             ${poster(t, art.get(t.id) ?? null, 'thumb')}
-            <span class="t">${esc(t.title)}${tags ? `<span class="tags">${tags}</span>` : ''}</span>
+            <span class="t">${esc(t.title)}${
+              tags || wiki ? `<span class="tags">${tags}${wiki}</span>` : ''
+            }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
-            ${mc}
+            ${buzzCell}
             <span class="co r o">${esc(countdown(t.daysOut))}</span>
           </a>`
         })
@@ -334,6 +434,102 @@ function renderSchedule(
     .join('')
 
   return header + body
+}
+
+/** Heat band -> css class and human name. Four steps so a 34 and a 60 don't
+ * land on the same colour, which is what happened when there were only two. */
+const BAND_CLASS: Record<Buzz['band'], string> = {
+  exceptional: 'b1',
+  strong: 'b2',
+  notable: 'b3',
+  quiet: 'b4',
+}
+const BAND_LABEL: Record<Buzz['band'], string> = {
+  exceptional: 'exceptional',
+  strong: 'strong',
+  notable: 'notable',
+  quiet: 'quiet',
+}
+
+/** 151556 -> "151.6k". The side column is 300px wide and full thousands
+ * separators pushed the domain line into an ellipsis, hiding the number the
+ * line exists to show. */
+function compact(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(n >= 100_000 ? 0 : 1)}k` : String(n)
+}
+
+/** The buzz panel: titles whose Wikipedia attention has broken away from their
+ * own normal. Ordered by points, which is the only ordering in this tool that
+ * ranks titles against each other — and it ranks them on *movement*, not fame,
+ * which is what keeps it out of the territory of the deleted demand score. */
+function renderBuzz(titles: Title[], coverage: RadarOutput['buzz']): string {
+  if (!coverage) return `<p class="empty">No attention data for this run.</p>`
+  const top = ranked(titles, 12)
+  if (top.length === 0) {
+    return `<p class="empty">Nothing measurable yet — ${coverage.resolved} of these titles have a Wikipedia article.</p>`
+  }
+  return top
+    .map((t) => {
+      const b = t.buzz
+      // A fading title is still elevated but its event has passed, so it gets a
+      // quiet label rather than the same badge as a live one.
+      const flag =
+        b.phase === 'rising'
+          ? `<span class="tag hot">rising</span>`
+          : b.phase === 'fading'
+            ? `<span class="tag fr">fading</span>`
+            : ''
+      // Band colour is always accompanied by the band's NAME. Amber is sub-3:1
+      // on the light ground, and colour alone excludes colourblind readers.
+      const cls = BAND_CLASS[b.band]
+      const bandTag = `<span class="tag ${cls}">${BAND_LABEL[b.band]}</span>`
+      return `<div class="wiki">
+        <div class="wtop"><span class="wn">${esc(t.title)}</span>${bandTag}${flag}
+        <span class="ws ${cls}">${b.points}</span></div>
+        <div class="wd">+${compact(b.excess)}/day over normal · ${compact(b.baseline)} → ${compact(b.recent)} · ${b.momentum}× wk</div>
+        <div class="bar"><i class="${cls}" style="width:${b.points}%"></i></div>
+      </div>`
+    })
+    .join('')
+}
+
+/** The first-party panel: wikis our audience is hot on that have no upcoming
+ * release behind them. Deliberately the *unmapped* list — the matched ones are
+ * already tagged in place on the schedule, and repeating them here would just
+ * be the same rows twice. */
+function renderTrending(report: TrendingReport | null): string {
+  if (!report) {
+    return `<p class="empty">No first-party export for this run — so no wiki signal. That is missing input, not a quiet week.</p>`
+  }
+  if (report.unmapped.length === 0) {
+    return `<p class="empty">Every trending wiki this week ties to an upcoming release.</p>`
+  }
+  // Everything here is written as a sentence a person can act on. The earlier
+  // version printed "0.83 · level 0.85 · +0.69", which is the raw export's
+  // vocabulary and means nothing to a reader — three unlabelled decimals that
+  // all look like the same kind of number and aren't.
+  return report.unmapped
+    .map((w) => {
+      const heat = Math.round(w.fpScore * 100)
+      const now = Math.round(w.trendingScore * 100)
+      const badge = w.isNew
+        ? `<span class="tag hot">1st week trending</span>`
+        : w.velocity >= 0.1
+          ? `<span class="tag hot">climbing</span>`
+          : ''
+      const trendSentence = w.isNew
+        ? `first week in the trending list`
+        : w.priorScore != null
+          ? `${Math.round(w.priorScore * 100)}% &rarr; ${now}% this week`
+          : `${now}% this week`
+      return `<div class="wiki">
+        <div class="wtop"><span class="wn">${esc(w.name)}</span>${badge}
+        <span class="ws">${heat}</span></div>
+        <div class="wd">${esc(w.pageviews14d.toLocaleString('en-US'))} readers in 14 days<br>${trendSentence}</div>
+        <div class="bar"><i style="width:${heat}%"></i></div>
+      </div>`
+    })
+    .join('')
 }
 
 function renderChanges(changes: Change[]): string {
@@ -465,6 +661,16 @@ function renderBody(data: RadarOutput, art: Art): string {
       <div class="tile"><b>${data.counts.inHorizon}</b><span>Next ${data.horizonDays} days</span></div>
       <div class="tile"><b>${data.counts.upcoming}</b><span>Upcoming</span></div>
       <div class="tile"><b>${data.counts.alerts}</b><span>Changed</span></div>
+      ${
+        data.buzz
+          ? `<div class="tile"><b>${data.buzz.spiking}</b><span>Spiking</span></div>`
+          : ''
+      }
+      ${
+        data.trending
+          ? `<div class="tile"><b>${data.trending.wikis}</b><span>Wikis trending</span></div>`
+          : ''
+      }
       <button id="theme" type="button" aria-label="Switch theme">◐ <span>Dark</span></button>
     </div>
   </header>
@@ -481,17 +687,42 @@ function renderBody(data: RadarOutput, art: Art): string {
       ${renderSchedule(data.titles, data.horizonDays, art, data.alerts)}
     </section>
 
-    <section>
-      <div class="shead"><h2>Since last run</h2><span class="aside">${data.changes.length}</span></div>
-      ${renderChanges(data.changes)}
-    </section>
+    <div>
+      <section>
+        <div class="shead"><h2>Buzz</h2><span class="aside">${
+          data.buzz ? `${data.buzz.spiking} rising · ${data.buzz.scored} measured` : 'no data'
+        }</span></div>
+        ${renderBuzz(data.titles, data.buzz)}
+      </section>
+
+      <section>
+        <div class="shead"><h2>Trending on Fandom</h2><span class="aside">${
+          data.trending ? `${data.trending.unmappedTotal} unattached` : 'no data'
+        }</span></div>
+        <p class="railnote">Wikis our audience is reading heavily that have <b>no upcoming release</b> — where a back-catalogue surge shows up.</p>
+        ${renderTrending(data.trending)}
+      </section>
+
+      <section>
+        <div class="shead"><h2>Since last run</h2><span class="aside">${data.changes.length}</span></div>
+        ${renderChanges(data.changes)}
+      </section>
+    </div>
   </div>
 
   <section class="method">
     <h3>How to read this</h3>
     <p>The full forward calendar of film and TV releases from the Metacritic catalog, in date order. <b>Changed</b> titles are ones added to the calendar or moved since the previous run — that comes from diffing against our own stored snapshot, and it is a signal the upstream API doesn't expose.</p>
-    <p><code>MC</code> is the Metascore where one exists; most titles have none before release, which is normal rather than missing data.</p>
-    <p style="color:var(--ink-3)">Data: neutron-api (metacritic). This tool deliberately carries no demand or popularity ranking — the available signals covered too few titles, and none of the TV ones, to rank on honestly.</p>
+    <p><b>Trending on Fandom</b> is our own weekly wiki traffic${
+      data.trending?.week ? ` (week of ${esc(data.trending.week)})` : ''
+    } — it moves once a week, not daily. On a schedule row, <b>wiki hot</b> means the title's own wiki is trending, while <b>franchise hot</b> means its franchise hub is: that says the franchise is drawing an audience, not this specific title.</p>
+    <p><b>Buzz</b> scores the <i>size of the surge</i> in Wikipedia pageviews — daily views beyond what a title this close to release would be getting anyway, so a big name sitting at its normal level scores nothing. The scale is anchored on a real event: <b>100 = The Odyssey's peak of 1.2M views/day</b>. For calibration, Superman (2025) would score 93, Avatar: Fire and Ash 90, Wicked: For Good 82. An ordinary trailer drop lands in the 40s–60s, so a week with nothing in red is the scale working, not a fault. The ramp runs <span class="tag b4">quiet</span> <span class="tag b3">notable</span> <span class="tag b2">strong</span> <span class="tag b1">exceptional</span>, and the score is always shown beside the colour. <b>Rising</b> means at least twice normal <i>and still climbing week over week</i>; <b>fading</b> means still elevated but the event has passed.${
+      data.buzz
+        ? ` Measured for ${data.buzz.scored} of ${data.counts.upcoming} titles — the rest have no article or too little traffic to read, which is <i>no signal</i> rather than a cold one.`
+        : ''
+    }</p>
+    <p>The <b>Buzz</b> column replaced the Metascore: almost nothing has a Metascore before release, so it was a column of dashes. A dash there now means <i>not measured</i> — no Wikipedia article, or too little traffic to read — which is not the same as cold.</p>
+    <p style="color:var(--ink-3)">Data: neutron-api (metacritic) and Fandom's internal trending export. The schedule is ordered by date and nothing here ranks titles by demand — the wiki signal is attached as labelled evidence, and a title with no tag has no signal rather than a cold one.</p>
   </section>
 
 </div></div>`

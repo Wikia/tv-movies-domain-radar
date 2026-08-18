@@ -52,12 +52,33 @@ export function formatTimestamp(iso: string): string {
 export const REASON_LABEL: Record<AlertReason, string> = {
   'newly-added': 'new on calendar',
   'date-changed': 'date moved',
+  // Blank on purpose: a row whose wiki is trending already shows a wiki tag
+  // built from title.trend, so labelling the reason too would state the same
+  // fact twice. Rows with an empty label render no tag.
+  'wiki-trending': '',
 }
 
 /** Semantic, not decorative: up = an addition, moved = a date shift. */
-export const REASON_TONE: Record<AlertReason, 'up' | 'moved'> = {
+export const REASON_TONE: Record<AlertReason, 'up' | 'moved' | 'hot'> = {
   'newly-added': 'up',
   'date-changed': 'moved',
+  'wiki-trending': 'hot',
+}
+
+/** Reasons that mean the CALENDAR changed. The "Changed" filter keys off these
+ * so a title flagged only because its wiki is trending doesn't appear under a
+ * heading promising added-or-moved titles. */
+export const CHANGE_REASONS: AlertReason[] = ['newly-added', 'date-changed']
+
+export function isCalendarChange(reasons: AlertReason[] | undefined): boolean {
+  return (reasons ?? []).some((reason) => CHANGE_REASONS.includes(reason))
+}
+
+/** 151556 -> "152k". Sidebar columns are narrow and full thousands separators
+ * push the number that matters into an ellipsis. */
+export function compact(value: number): string {
+  if (value < 1000) return String(value)
+  return `${(value / 1000).toFixed(value >= 100_000 ? 0 : 1)}k`
 }
 
 /** Group titles by release month, preserving chronological order. */
