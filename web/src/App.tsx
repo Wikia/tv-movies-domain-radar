@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Buzz } from './components/Buzz'
 import { Changes } from './components/Changes'
 import { Tile } from './components/Primitives'
+import { TitleDetail } from './components/TitleDetail'
+import { TrendingPage } from './components/TrendingPage'
 import { Trending } from './components/Trending'
 import { Schedule, type Filter } from './components/Schedule'
 import { ThemeToggle } from './components/ThemeToggle'
@@ -17,6 +19,21 @@ type State =
 export default function App() {
   const [state, setState] = useState<State>({ status: 'loading' })
   const [filter, setFilter] = useState<Filter>('all')
+  // Real URLs rather than a modal, so a trending title can be linked to and
+  // reloaded. The server already serves the app for any unmatched path.
+  const [route, setRoute] = useState(() => window.location.pathname)
+
+  useEffect(() => {
+    const onPop = (): void => setRoute(window.location.pathname)
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
+
+  const navigate = useCallback((path: string) => {
+    window.history.pushState({}, '', path)
+    setRoute(path)
+    window.scrollTo(0, 0)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -74,6 +91,22 @@ export default function App() {
 
   if (!data) return null
 
+  if (route === '/trending') {
+    return (
+      <TrendingPage
+        titles={data.titles}
+        onOpen={(id) => navigate(`/title/${id}`)}
+        onBack={() => navigate('/')}
+      />
+    )
+  }
+
+  const detailId = /^\/title\/(\d+)$/.exec(route)?.[1]
+  if (detailId) {
+    const title = data.titles.find((t) => String(t.id) === detailId)
+    if (title) return <TitleDetail title={title} onBack={() => navigate('/')} />
+  }
+
   /** Clicking an active tile clears it, so a tile is a toggle, not a trap. */
   const toggle = (next: Filter) => setFilter((current) => (current === next ? 'all' : next))
 
@@ -99,7 +132,11 @@ export default function App() {
             active={filter === 'changed'}
             onClick={() => toggle('changed')}
           />
-          {data.buzz && <Tile label="Spiking" value={data.buzz.spiking} />}
+          {/* The count and the page that lists them are the same idea, so
+              clicking the number to see them is the obvious gesture. */}
+          {data.buzz && (
+            <Tile label="Trending" value={data.buzz.spiking} onClick={() => navigate('/trending')} />
+          )}
           {data.trending && <Tile label="Wikis trending" value={data.trending.wikis} />}
           <ThemeToggle />
         </div>
@@ -112,14 +149,24 @@ export default function App() {
           filter={filter}
           onFilter={setFilter}
           reasons={reasons}
+          onOpen={(id) => navigate(`/title/${id}`)}
         />
         {/* Buzz sits ABOVE the change log: the log runs to dozens of rows on a
             busy day (mostly "dropped", which is audit trail rather than news)
             and pushed the signal panel below the fold. */}
         <div className="flex flex-col gap-11">
-          <Buzz titles={data.titles} coverage={data.buzz} total={data.counts.upcoming} />
+          <Buzz
+            titles={data.titles}
+            coverage={data.buzz}
+            total={data.counts.upcoming}
+            onOpen={(id) => navigate(`/title/${id}`)}
+          />
           <Trending report={data.trending} />
-          <Changes changes={data.changes} />
+          <Changes
+            changes={data.changes}
+            known={new Set(data.titles.map((t) => t.id))}
+            onOpen={(id) => navigate(`/title/${id}`)}
+          />
         </div>
       </div>
 

@@ -179,6 +179,22 @@ into one number — you have rebuilt the thing that was deleted.
 - **A pinned `--today` records no readings**, for the same reason it writes no
   calendar snapshot: today's numbers filed under a past date would corrupt the
   history permanently.
+- **Sources are combined by agreement, not arithmetic.** `signals.ts` counts how
+  many are rising; it never averages them into one score. Averaging is what the
+  deleted demand score did.
+- **Only Wikipedia gets 0-100 points.** The Odyssey anchor calibrates pageviews
+  and is meaningless for article counts or TMDB popularity. Other sources report
+  `relative`/`momentum`/`phase` only.
+- **YouTube views are cumulative and must be differenced** before scoring; news
+  articles and TMDB popularity are already rates. Getting this backwards
+  produces nonsense either way.
+- **Mock readings carry `mock: 1`** and that flag must keep reaching the UI. A
+  demo that can pass for evidence is worse than no demo.
+- **Mock history must anchor to real readings** — integrate cumulative counters
+  backwards from the earliest real total. Splicing naively created a 419x fake
+  surge at the seam.
+- **The detail page shows dissenting sources on purpose.** Hiding the flat rows
+  would turn a disagreement into an unearned consensus.
 - **Don't reach for Reddit, X or Google Trends without re-probing.** All three
   were tested live and rejected — Reddit 403s unauthenticated, X needs a paid
   key, Google Trends' explore API 429s and its working RSS feed had zero

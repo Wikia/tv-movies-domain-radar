@@ -58,6 +58,7 @@ export function Trending({ report }: { report: TrendingReport | null }) {
                   </>
                 }
                 title={`${wiki.domain} — traffic tier ${wiki.tier}`}
+                href={`https://${wiki.domain}`}
                 badges={
                   wiki.isNew ? (
                     <Tag tone="hot">1st week</Tag>

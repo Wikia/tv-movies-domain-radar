@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
 /** Section header. The fixed height is load-bearing: the schedule carries
  * inline controls and the sidebar doesn't, and without a shared header height
@@ -117,6 +117,8 @@ export function SignalRow({
   badges,
   title,
   tone = 'accent',
+  onClick,
+  href,
 }: {
   name: string
   score: string
@@ -127,13 +129,30 @@ export function SignalRow({
   /** Which heat band paints the number and the bar. Defaults to the neutral
    * accent, so band colour only appears when a title has actually earned it. */
   tone?: keyof typeof SIGNAL_TONE
+  /** Makes the row open its detail page. */
+  onClick?: () => void
+  /** Makes the row an outbound link instead — used by trending wikis, which
+   * have no title behind them to open, only the wiki itself. */
+  href?: string
 }) {
   const paint = SIGNAL_TONE[tone]
   // The title gets the size, and the supporting figures wrap onto their own
   // lines rather than being cut off by an ellipsis — a truncated wiki name is
   // unreadable, and the numbers under it are the whole point of the row.
+  const interactive = Boolean(onClick || href)
+  const Wrapper = href ? 'a' : 'div'
   return (
-    <div className="border-b border-line-soft py-2.5" title={title}>
+    <Wrapper
+      className={`block border-b border-line-soft py-2.5 text-inherit no-underline${
+        interactive ? ' cursor-pointer hover:bg-raise' : ''
+      }`}
+      title={title}
+      {...(href ? { href, target: '_blank', rel: 'noreferrer' } : {})}
+      {...(onClick && !href
+        ? { onClick, role: 'button', tabIndex: 0,
+            onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter') onClick() } }
+        : {})}
+    >
       <div className="flex items-baseline gap-2">
         <span className="min-w-0 text-[14.5px] leading-tight font-semibold [overflow-wrap:anywhere]">
           {name}
@@ -148,7 +167,7 @@ export function SignalRow({
           style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
         />
       </div>
-    </div>
+    </Wrapper>
   )
 }
 

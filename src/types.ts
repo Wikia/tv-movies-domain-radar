@@ -46,6 +46,54 @@ export interface Title {
   // we couldn't measure it (no article, or too little traffic to be meaningful),
   // never that the title is cold.
   buzz?: Buzz
+
+  // the same question asked of every source we have history for, plus how many
+  // of them agree. Absent means nothing had enough history to say.
+  attention?: Attention
+}
+
+/** One source's verdict on one title.
+ *
+ * Deliberately NOT a 0-100 score. The Odyssey anchor calibrates Wikipedia
+ * pageviews and means nothing for article counts or a TMDB popularity index —
+ * pretending otherwise would invent a comparability that doesn't exist. What
+ * does transfer is the shape: how far above its own normal, which way it's
+ * moving, and how much history backs the claim.
+ */
+export interface SourceSignal {
+  source: SignalSource
+  /** What was actually measured — views, articles, popularity. Named so the UI
+   * can say it rather than implying every source counts the same thing. */
+  metric: string
+  recent: number
+  baseline: number
+  /** Cohort-detrended: how far above normal *for a title this close to
+   * release*, so the ramp every title shares is already divided out. */
+  relative: number
+  /** recent vs the week before it. >1 climbing, <1 falling. */
+  momentum: number
+  phase: 'rising' | 'fading' | 'flat'
+  /** Days of history behind this reading. Published so a thin verdict is
+   * visibly thin. */
+  days: number
+  /** True when any of the underlying readings were generated rather than
+   * observed. Must survive to the UI — a demo must never pass for evidence. */
+  mock?: boolean
+}
+
+export type SignalSource = 'wikipedia' | 'news' | 'youtube' | 'tmdb'
+
+/** Every source that could speak, and what they add up to. */
+export interface Attention {
+  sources: SourceSignal[]
+  /** Names of the sources currently rising. */
+  rising: SignalSource[]
+  /** Two or more independent sources rising. The point of collecting more than
+   * one source was never a better number — it was being able to tell a broad
+   * event from a narrow one. */
+  confirmed: boolean
+  /** Any contributing reading was mock data. */
+  mock: boolean
 }
 
 /** Wikipedia-pageview reading for a title.

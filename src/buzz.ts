@@ -38,28 +38,37 @@ function mean(values: number[]): number {
 }
 
 /** Which days-out bucket a title falls in. Undated titles get their own bucket
- * rather than being lumped with the imminent ones. */
-function bucketOf(daysOut: number | null): string {
+ * rather than being lumped with the imminent ones.
+ *
+ * Exported so every source buckets identically — a cohort computed two ways is
+ * not a cohort. */
+export function bucketOf(daysOut: number | null): string {
   if (daysOut == null) return 'undated'
   const edge = BUZZ.cohortBuckets.find((d) => daysOut <= d)
   return edge != null ? `<=${edge}` : 'far'
 }
 
 /** Raw, per-title reading before any cohort adjustment. */
-interface Raw {
+export interface Raw {
   recent: number
   baseline: number
   ratio: number
   momentum: number
 }
 
-function measure(series: number[]): Raw | null {
+/** Reduce a daily series to recent-vs-baseline plus momentum.
+ *
+ * Exported because every source is measured this way. Only `minBaseline`
+ * differs: 50 views/day is a sensible floor for Wikipedia and meaningless for
+ * article counts, so the caller supplies it.
+ */
+export function measure(series: number[], minBaseline: number = BUZZ.minBaselineViews): Raw | null {
   // Need a full baseline window plus the recent window, or the comparison is
   // between two different amounts of evidence.
   if (series.length < BUZZ.baselineDays + BUZZ.recentDays) return null
   const recent = mean(series.slice(-BUZZ.recentDays))
   const baseline = median(series.slice(-(BUZZ.baselineDays + BUZZ.recentDays), -BUZZ.recentDays))
-  if (baseline < BUZZ.minBaselineViews) return null // too small to spike meaningfully
+  if (baseline < minBaseline) return null // too small to spike meaningfully
 
   // Momentum compares the recent window against the days immediately before it
   // — a much shorter memory than the 28-day baseline. That short memory is the
@@ -178,11 +187,16 @@ export function attach(titles: Title[], series: Map<number, number[]>): number {
   return readings.length
 }
 
-/** Titles worth showing in the buzz panel.
+/** Titles worth showing in the buzz panel, strictly by points.
  *
- * Rising events first, then by points — which now means by the SIZE of the
- * surge. Ranking by multiple instead put tiny articles with big percentages
- * above genuinely large events.
+ * The panel prints `points` beside every row, so points must be what orders it.
+ * An earlier version sorted rising titles ahead of everything else, which put a
+ * 64 below an 11 and made the column look broken — the same mistake as showing
+ * one quantity while sorting by another, which this project has now made three
+ * times. Phase is still visible as a tag; it just doesn't reorder anything.
+ *
+ * Rising wins a tie, since a surge still climbing is the more actionable of two
+ * equal readings.
  *
  * Deliberately NOT applied to the schedule, which stays chronological.
  */
@@ -190,7 +204,7 @@ export function ranked(titles: Title[], limit: number): ScoredTitle[] {
   const risingFirst = (title: ScoredTitle): number => (title.buzz.phase === 'rising' ? 0 : 1)
   return titles
     .filter(isScored)
-    .sort((a, b) => risingFirst(a) - risingFirst(b) || b.buzz.points - a.buzz.points)
+    .sort((a, b) => b.buzz.points - a.buzz.points || risingFirst(a) - risingFirst(b))
     .slice(0, limit)
 }
 

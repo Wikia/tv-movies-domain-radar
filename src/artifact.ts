@@ -26,6 +26,7 @@ import type {
   Buzz,
   Change,
   RadarOutput,
+  SignalSource,
   Title,
   TrendingReport,
 } from './types.js'
@@ -105,12 +106,20 @@ function initials(title: string): string {
     .join('')
 }
 
-/** Poster tile, or a typographic stand-in when there's no art. */
-function poster(title: Title, src: string | null, extraClass = ''): string {
-  if (src) {
-    return `<div class="art ${extraClass}"><img src="${src}" alt="" loading="lazy" decoding="async"></div>`
-  }
+/** Poster tile, or a typographic stand-in when there's no art.
+ *
+ * The art is painted by a per-title CSS class rather than an inline `<img>`, so
+ * each data URI is written into the page exactly once no matter how many places
+ * show that poster. Inlining per element instead would have doubled a 7 MB page
+ * the moment the detail view started showing art too. */
+function poster(title: Title, hasArt: boolean, extraClass = ''): string {
+  if (hasArt) return `<div class="art a${title.id} ${extraClass}" aria-hidden="true"></div>`
   return `<div class="art noart ${extraClass}" aria-hidden="true"><span>${esc(initials(title.title))}</span></div>`
+}
+
+/** One rule per title, carrying that title's inlined poster. */
+function artCSS(art: Art): string {
+  return [...art].map(([id, src]) => `.art.a${id}{background-image:url("${src}")}`).join('\n')
 }
 
 /** Tokens live on `.radar`, NOT :root, so the theme toggle owns them.
@@ -264,9 +273,8 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .art{
   position:relative;aspect-ratio:2/3;border-radius:10px;overflow:hidden;
-  background:var(--raise);border:1px solid var(--line);
+  background:var(--raise) center/cover no-repeat;border:1px solid var(--line);
 }
-.art img{width:100%;height:100%;object-fit:cover;display:block}
 .noart{display:flex;align-items:center;justify-content:center}
 .noart span{font-size:26px;font-weight:600;color:var(--ink-3)}
 
@@ -300,6 +308,61 @@ button.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* One-line standfirst for a rail panel: enough to say what the list is without
    eating the space the list needs. */
 .railnote{font-size:12px;line-height:1.5;color:var(--ink-3);margin:0 0 10px}
+/* --- per-title detail, one at a time -----------------------------------
+   The section stays out of the way until a title is clicked; then only that
+   title's block shows. Guarded by @supports so a browser without :has() falls
+   back to listing them, which is worse-looking but still works — better than
+   links that lead to something permanently hidden. */
+.detail{border:1px solid var(--line);border-radius:12px;background:var(--raise);padding:16px 18px;margin:0 0 12px}
+.dhead{display:flex;flex-wrap:wrap;align-items:flex-start;gap:20px;margin:0 0 26px}
+.art.dart{width:96px;flex:none;border-radius:10px}
+.art.dart span{font-size:30px}
+.dmain{min-width:0}
+.dmain h1{font-size:clamp(22px,3.4vw,32px);font-weight:650;letter-spacing:-.02em;margin:0;line-height:1.15}
+.dbadges{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:12px}
+.dbadges .tag.quiet{opacity:.45}
+.dbadges .tag i{font-style:normal;font-family:var(--mono)}
+#details h3{font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-2);margin:26px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.dmeta{font-family:var(--mono);font-size:12px;color:var(--ink-3);margin:6px 0 0}
+.closed{display:inline-block;font-size:11px;color:var(--ink-3);text-decoration:none;
+  border:1px solid var(--line);border-radius:20px;padding:5px 12px;margin:0 0 22px}
+.closed:hover{color:var(--accent)}
+.srow{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:11px 0;font-size:13px;border-bottom:1px solid var(--line-soft)}
+.srow.quiet{opacity:.5}
+.sname{width:112px;flex:none;font-weight:600;font-size:14px}
+.sval{font-family:var(--mono);font-size:12px;color:var(--ink-2)}
+.sval i{color:var(--ink-3);font-style:normal}
+.srel{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+.srel b{color:var(--hot-2)}
+.snote{font-size:13px;line-height:1.65;color:var(--ink-2);margin:14px 0 0;max-width:74ch}
+.snote a{color:var(--accent)}
+/* Behaves like a subpage in a single file: targeting a title hides the whole
+   main view and shows just that block, at the top. Anchoring to the bottom of
+   a very long page is not a detail view, it is a footnote.
+   Guarded, so a browser without :has() still shows the blocks rather than
+   linking to something permanently hidden. */
+@supports selector(:has(*)){
+  #details{display:none}
+  .wrap:has(.detail:target) .mainview{display:none}
+  .wrap:has(.detail:target) #details{display:block}
+  #details .detail{display:none}
+  #details .detail:target{display:block;border:0;background:transparent;padding:0}
+}
+/* Signal-panel title links: underlined on hover only, so a column of them
+   doesn't read as a wall of blue. */
+.jump{text-decoration:none}
+.jump:hover{color:var(--accent);text-decoration:underline}
+/* Signal-panel title links: underlined on hover only, so a column of them
+   doesn't read as a wall of blue. */
+.jump{text-decoration:none}
+.jump:hover{color:var(--accent);text-decoration:underline}
+/* Unmissable by design: a shared page must never pass generated readings off
+   as observed ones. */
+.mockbar{border:1px solid var(--hot-2);background:var(--hot-2-bg);color:var(--ink-2);
+  border-radius:10px;padding:10px 14px;margin:0 0 24px;font-size:13px;line-height:1.5}
+.mockbar b{color:var(--hot-2)}
+
 /* Level bar. Purely a reading aid for the score already printed beside it —
    it encodes nothing the number doesn't. */
 .bar{height:3px;border-radius:2px;background:var(--line);margin-top:5px;overflow:hidden}
@@ -396,8 +459,15 @@ function renderSchedule(
                 `${t.trend.domain} · trending ${t.trend.trendingScore.toFixed(2)}`,
               )}">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
             : ''
-          // Only spiking titles get a row tag. Tagging all 138 measured titles
-          // would make the marker meaningless.
+          // How many independent sources agree. Neutral, never a heat colour —
+          // the ramp owns red-to-green for magnitude, and agreement is a
+          // different dimension; one colour meaning two things dilutes both.
+          const agree =
+            t.attention && t.attention.rising.length > 1
+              ? `<span class="tag" title="${esc(
+                  `rising in: ${t.attention.rising.join(', ')}`,
+                )}">${t.attention.rising.length}&times;</span>`
+              : ''
           // Buzz replaced the Metascore column: most upcoming titles have no
           // Metascore, so it was a column of dashes, and the buzz number is the
           // thing worth scanning down. A dash means "not measured", NOT "cold".
@@ -412,12 +482,12 @@ function renderSchedule(
               )}">${t.buzz.points}</span>`
             : `<span class="r none" title="No buzz signal — no Wikipedia article, or too little traffic to read. Not the same as cold.">—</span>`
 
-          return `<a class="${ROW_CLASS}" href="${esc(t.url)}" target="_blank" rel="noreferrer"
+          return `<a class="${ROW_CLASS}" href="${esc(titleHref(t))}"
               data-type="${t.type}" data-alert="${alert ? 1 : 0}">
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
-            ${poster(t, art.get(t.id) ?? null, 'thumb')}
+            ${poster(t, art.has(t.id), 'thumb')}
             <span class="t">${esc(t.title)}${
-              tags || wiki ? `<span class="tags">${tags}${wiki}</span>` : ''
+              tags || wiki || agree ? `<span class="tags">${tags}${agree}${wiki}</span>` : ''
             }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
@@ -434,6 +504,133 @@ function renderSchedule(
     .join('')
 
   return header + body
+}
+
+const SOURCE_LABEL: Record<SignalSource, string> = {
+  wikipedia: 'Wikipedia',
+  youtube: 'YouTube',
+  news: 'Google News',
+  tmdb: 'TMDB',
+}
+
+/** Units per source. "views", "articles" and "popularity" are not the same kind
+ * of thing, and a shared label would imply they are. */
+const METRIC_LABEL: Record<string, string> = {
+  views: 'views/day',
+  articles: 'articles/day',
+  popularity: 'popularity',
+}
+
+/** Fixed order so sources don't reshuffle between titles. */
+const SOURCE_ORDER: SignalSource[] = ['wikipedia', 'youtube', 'news', 'tmdb']
+
+function anchorId(title: Title): string {
+  return `t${title.id}`
+}
+
+/** Per-title evidence, one title at a time.
+ *
+ * A single file has no routes, so "open the details" is an anchor and the CSS
+ * shows only the targeted block — the whole section is hidden until you click
+ * something. An earlier version listed all of them at once, which was just a
+ * long redundant table under the page.
+ *
+ * Every source is listed INCLUDING the ones that disagree: a title rising on
+ * YouTube and flat on Wikipedia is a more interesting fact than one rising
+ * everywhere, and dropping the flat rows would turn a disagreement into an
+ * unearned consensus.
+ */
+function renderDetails(titles: Title[], art: Art): string {
+  return titles
+    .map((t) => {
+      const attention = t.attention
+      const bySource = new Map((attention?.sources ?? []).map((sig) => [sig.source, sig]))
+      const rows = SOURCE_ORDER.filter((source) => bySource.has(source))
+        .map((source) => {
+          const sig = bySource.get(source)!
+          const hot = sig.phase === 'rising'
+          return `<div class="srow${hot ? '' : ' quiet'}">
+            <span class="sname">${SOURCE_LABEL[source]}</span>
+            <span class="tag ${hot ? 'hot' : ''}">${sig.phase}</span>
+            <span class="sval">${compact(sig.baseline)} &rarr; ${compact(sig.recent)} <i>${
+              METRIC_LABEL[sig.metric] ?? esc(sig.metric)
+            }</i></span>
+            <span class="srel"><b>${sig.relative}&times;</b> vs similar · ${sig.momentum}&times; wk · ${sig.days}d</span>
+          </div>`
+        })
+        .join('')
+
+      const badges = [
+        attention?.confirmed
+          ? `<span class="tag hot">confirmed · ${attention.rising.length} sources</span>`
+          : attention && attention.rising.length > 0
+            ? `<span class="tag hot">single source</span>`
+            : '',
+        t.buzz ? `<span class="tag">buzz ${t.buzz.points}</span>` : '',
+        t.trend
+          ? `<span class="tag">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
+          : '',
+        // Provenance, same as the web build: rising sources lit, measured-but-flat
+        // dimmed rather than dropped — a disagreement says more than a silent
+        // consensus — and a source with too little history absent entirely.
+        SOURCE_ORDER.filter((source) => bySource.has(source))
+          .map((source) => {
+            const sig = bySource.get(source)!
+            const rising = sig.phase === 'rising'
+            return `<span class="tag ${rising ? 'hot' : 'quiet'}">${SOURCE_LABEL[source]}${
+              rising ? ` <i>${sig.relative}&times;</i>` : ''
+            }</span>`
+          })
+          .join('') || '<span class="dmeta">no movement</span>',
+      ].join('')
+
+      const fandom = t.trend
+        ? `<h3>On Fandom</h3>
+           <p class="snote">${
+             t.trend.match === 'exact'
+               ? `This title's own wiki, <a href="https://${esc(t.trend.domain)}" target="_blank" rel="noreferrer">${esc(t.trend.domain)}</a>, is trending this week.`
+               : `Its franchise hub <a href="https://${esc(t.trend.domain)}" target="_blank" rel="noreferrer">${esc(t.trend.domain)}</a> is trending — which says the franchise is drawing an audience, not necessarily this title.`
+           } ${t.trend.pageviews14d.toLocaleString('en-US')} readers in 14 days, trending ${Math.round(t.trend.trendingScore * 100)}%${t.trend.isNew ? ' — first week in the trending list' : ''}.</p>`
+        : ''
+
+      return `<div class="detail" id="${anchorId(t)}">
+        <p><a class="closed" href="#">&larr; Back to the radar</a></p>
+        ${attention?.mock ? `<div class="mockbar"><b>Demo data.</b> Some readings behind this verdict were generated, not observed — YouTube, TMDB and Google News have no history endpoint, so their real series are still accruing.</div>` : ''}
+        <div class="dhead">
+          ${poster(t, art.has(t.id), 'dart')}
+          <div class="dmain">
+            <h1>${esc(t.title)}</h1>
+            <p class="dmeta">${t.type === 'movie' ? 'Film' : 'TV'} · ${esc(fmtDateYear(t.releaseDate))}${
+              t.daysOut != null && t.daysOut >= 0 ? ` · in ${t.daysOut} days` : ''
+            }</p>
+            <div class="dbadges">${badges}</div>
+          </div>
+        </div>
+
+        <h3>Where it's trending</h3>
+        ${
+          rows ||
+          `<p class="snote">Nothing could be measured — no source had enough history. That is an absence of evidence, not evidence it is cold.</p>`
+        }
+        ${
+          rows
+            ? `<p class="snote">Each source is measured against <i>its own</i> recent normal, then against what titles the same distance from release are doing — so the ramp every title gets as it approaches release is already divided out. <b>Rising</b> means at least twice normal and still climbing week over week. A source is only listed once it has enough history to have an opinion.</p>`
+            : ''
+        }
+        ${fandom}
+        <p class="snote"><a href="https://www.fandom.com/search?query=${encodeURIComponent(t.title)}" target="_blank" rel="noreferrer">Search Fandom for this title &rarr;</a></p>
+      </div>`
+    })
+    .join('')
+}
+
+/** Where a title links to: its own detail block, further down the page.
+ *
+ * Deliberately never Metacritic. The outbound links (the Fandom wiki, a Fandom
+ * search) live inside the detail block, where there is room to label them.
+ */
+function titleHref(title: Title): string {
+  return `#${anchorId(title)}`
 }
 
 /** Heat band -> css class and human name. Four steps so a 34 and a 60 don't
@@ -484,9 +681,13 @@ function renderBuzz(titles: Title[], coverage: RadarOutput['buzz']): string {
       const cls = BAND_CLASS[b.band]
       const bandTag = `<span class="tag ${cls}">${BAND_LABEL[b.band]}</span>`
       return `<div class="wiki">
-        <div class="wtop"><span class="wn">${esc(t.title)}</span>${bandTag}${flag}
+        <div class="wtop"><span class="wn"><a class="jump" href="${esc(titleHref(t))}">${esc(t.title)}</a></span>${bandTag}${flag}
         <span class="ws ${cls}">${b.points}</span></div>
-        <div class="wd">+${compact(b.excess)}/day over normal · ${compact(b.baseline)} → ${compact(b.recent)} · ${b.momentum}× wk</div>
+        <div class="wd">+${compact(b.excess)}/day over normal · ${compact(b.baseline)} → ${compact(b.recent)} · ${b.momentum}× wk${
+          t.attention && t.attention.rising.length > 1
+            ? `<br>rising in ${esc(t.attention.rising.join(', '))}`
+            : ''
+        }</div>
         <div class="bar"><i class="${cls}" style="width:${b.points}%"></i></div>
       </div>`
     })
@@ -650,6 +851,13 @@ function renderBody(data: RadarOutput, art: Art): string {
   })
 
   return `<div class="radar"><div class="wrap">
+  <div class="mainview">
+
+  ${
+    data.titles.some((t) => t.attention?.mock)
+      ? `<div class="mockbar"><b>Demo data.</b> Some readings behind the multi-source verdicts were generated rather than observed — YouTube, TMDB and Google News have no history endpoint, so their real series are still accruing.</div>`
+      : ''
+  }
 
   <header class="top">
     <div>
@@ -710,6 +918,8 @@ function renderBody(data: RadarOutput, art: Art): string {
     </div>
   </div>
 
+
+
   <section class="method">
     <h3>How to read this</h3>
     <p>The full forward calendar of film and TV releases from the Metacritic catalog, in date order. <b>Changed</b> titles are ones added to the calendar or moved since the previous run — that comes from diffing against our own stored snapshot, and it is a signal the upstream API doesn't expose.</p>
@@ -725,6 +935,12 @@ function renderBody(data: RadarOutput, art: Art): string {
     <p style="color:var(--ink-3)">Data: neutron-api (metacritic) and Fandom's internal trending export. The schedule is ordered by date and nothing here ranks titles by demand — the wiki signal is attached as labelled evidence, and a title with no tag has no signal rather than a cold one.</p>
   </section>
 
+  </div><!-- /mainview -->
+
+  <section id="details">
+    ${renderDetails(data.titles, art)}
+  </section>
+
 </div></div>`
 }
 
@@ -733,7 +949,7 @@ export async function build(data: RadarOutput, outDir = path.join(ROOT, 'out')):
 
   const art = await collectArt(data)
   const body = renderBody(data, art)
-  const style = `<style>${CSS}</style>`
+  const style = `<style>${CSS}\n${artCSS(art)}</style>`
 
   // Fail loudly rather than shipping a page that renders blank. The filter
   // script hides any month group containing no visible rows, so if the rows it

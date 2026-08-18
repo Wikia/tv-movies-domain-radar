@@ -516,6 +516,65 @@ TMDB_ACCESS_TOKEN=    # optional; TMDB no-ops without it
 Both degrade to "no signal" when absent, the same way the first-party export
 does — a missing key never fails the run.
 
+## The multi-source verdict
+
+Every source with enough history is asked the same question — *is this title
+above its own normal?* — using buzz.ts's machinery: same baseline window, same
+cohort detrend, same momentum gate.
+
+**What is deliberately NOT shared is the 0–100 score.** That scale is anchored on
+The Odyssey's 1.2M pageviews/day and means nothing for article counts or a TMDB
+popularity index; a shared number would invent a comparability that doesn't
+exist. Each source reports only the part that transfers — how far above its own
+normal (`relative`), which way it's moving (`momentum`, `phase`), and how many
+days back the claim.
+
+Sources are then combined by **agreement, not arithmetic**:
+
+- **confirmed** — `SIGNALS.confirmAtSources` (2) or more rising
+- **single source** — one rising
+
+Averaging them into one more-confident-looking number is exactly the move that
+produced the demand score this project deleted. Counting them tells you
+something averaging can't: whether an event is broad or narrow.
+
+Two details that matter:
+
+- **YouTube views are cumulative**, so they're differenced into a daily rate
+  before scoring; TMDB popularity and news article counts are already rates.
+  Diffing a level, or failing to diff a counter, both produce nonsense.
+- **Detrending happens per source.** A week where the whole calendar gets more
+  press is a property of the press, not of any title in it.
+
+### Per-title detail pages
+
+A trending title links to `/title/<id>`, which shows every source's reading side
+by side — **including the ones that disagree.** A title rising on YouTube and
+flat on Wikipedia is a different and more interesting fact than one rising
+everywhere, and hiding the dissent would turn a disagreement into an unearned
+consensus.
+
+`confirmed` is a claim; the detail page is the evidence behind it. A claim the
+reader can't inspect is one they have to take on faith, which is what got the
+original score deleted.
+
+### Demo data
+
+`npm run mock:signals` fabricates ~35 days of history for the three snapshot
+sources, correlated with what Wikipedia already says is rising, so the
+end-to-end behaviour can be seen before the real series mature (~4 weeks).
+
+- Every generated reading carries **`mock: 1`**, which survives into the scoring
+  and is surfaced as a banner on the dashboard and every detail page.
+- **Real readings are never overwritten** — only missing days are filled.
+- Mock history is *anchored* to real readings: cumulative counters are
+  integrated backwards from the earliest real total, levels are rescaled to the
+  real median. Without that the seam is a cliff — the first attempt spliced a
+  made-up YouTube total onto a genuine 34M-view count and scored the joint as a
+  419× surge.
+
+`npm run mock:signals -- --reset` drops generated readings and rebuilds them.
+
 ## Changes and alerts
 
 Every run diffs against the previous snapshot:

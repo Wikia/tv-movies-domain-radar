@@ -37,6 +37,34 @@ export interface Title {
   // signals; absent = not measured
   trend?: TitleTrend
   buzz?: Buzz
+  attention?: Attention
+}
+
+export type SignalSource = 'wikipedia' | 'news' | 'youtube' | 'tmdb'
+
+/** One source's verdict. Deliberately not a 0-100 score: the Odyssey anchor
+ * calibrates Wikipedia pageviews and means nothing for article counts or a TMDB
+ * popularity index. What transfers is how far above its own normal a title is
+ * and which way it's moving. */
+export interface SourceSignal {
+  source: SignalSource
+  metric: string
+  recent: number
+  baseline: number
+  relative: number
+  momentum: number
+  phase: 'rising' | 'fading' | 'flat'
+  days: number
+  mock?: boolean
+}
+
+export interface Attention {
+  sources: SourceSignal[]
+  rising: SignalSource[]
+  /** Two or more independent sources rising — a broad event rather than a
+   * narrow one. That distinction is the point of having several sources. */
+  confirmed: boolean
+  mock: boolean
 }
 
 /** Wikipedia-pageview reading. `relative` is the one to reason about: growth

@@ -64,12 +64,14 @@ export function Schedule({
   filter,
   onFilter,
   reasons,
+  onOpen,
 }: {
   titles: Title[]
   horizonDays: number
   filter: Filter
   onFilter: (filter: Filter) => void
   reasons: Map<number, AlertReason[]>
+  onOpen: (id: number) => void
 }) {
   const [query, setQuery] = useState('')
   const [showAll, setShowAll] = useState(false)
@@ -166,7 +168,12 @@ export function Schedule({
               </div>
 
               {group.map((title) => (
-                <Row key={title.id} title={title} reasons={reasons.get(title.id)} />
+                <Row
+                  key={title.id}
+                  title={title}
+                  reasons={reasons.get(title.id)}
+                  onOpen={onOpen}
+                />
               ))}
             </div>
           ))}
@@ -176,12 +183,25 @@ export function Schedule({
   )
 }
 
-function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
+function Row({
+  title,
+  reasons,
+  onOpen,
+}: {
+  title: Title
+  reasons?: AlertReason[]
+  onOpen: (id: number) => void
+}) {
+  // A row now leads to the evidence rather than off to Metacritic — the
+  // outbound link lives on the detail page, where there's room to label it.
   return (
     <a
-      href={title.url}
-      target="_blank"
-      rel="noreferrer"
+      href={`/title/${title.id}`}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return
+        event.preventDefault()
+        onOpen(title.id)
+      }}
       className={`${COLS} group border-b border-line-soft py-1.5 text-inherit no-underline hover:bg-raise`}
     >
       <span className="figure text-[12.5px] text-ink-2">{formatDate(title.releaseDate)}</span>
@@ -210,6 +230,15 @@ function Row({ title, reasons }: { title: Title; reasons?: AlertReason[] }) {
           {/* "franchise hot" is a weaker claim than "wiki hot" — the franchise
               hub is drawing an audience, not necessarily this title. Kept
               visually quieter so the two don't read alike. */}
+          {/* How many independent sources agree. The count is the point: one
+              source rising is a lead, several is an event. */}
+          {title.attention && title.attention.rising.length > 0 && (
+            <Tag tone="muted">
+              <span title={`rising in: ${title.attention.rising.join(', ')}`}>
+                {title.attention.rising.length}&times;
+              </span>
+            </Tag>
+          )}
           {title.trend && (
             <Tag tone={title.trend.match === 'exact' ? 'hot' : 'muted'}>
               <span

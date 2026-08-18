@@ -28,19 +28,20 @@ export function Buzz({
   titles,
   coverage,
   total,
+  onOpen,
 }: {
   titles: Title[]
   coverage: RadarOutput['buzz']
   total: number
+  onOpen: (id: number) => void
 }) {
-  // Rising events first, then by points — i.e. by the SIZE of the surge. Must
-  // match `ranked()` in src/buzz.ts, which the static dashboard uses; the two
-  // sorted differently for one build and the panel came out visibly unordered.
+  // Strictly by points, because points are what the row displays. Sorting
+  // rising titles to the top instead put a 64 below an 11 and read as broken.
+  // Must match `ranked()` in src/buzz.ts — the two sorted differently once and
+  // the panel came out visibly unordered.
   const ranked = titles
     .filter((title): title is ScoredTitle => title.buzz != null)
-    .sort(
-      (a, b) => risingFirst(a) - risingFirst(b) || b.buzz.points - a.buzz.points,
-    )
+    .sort((a, b) => b.buzz.points - a.buzz.points || risingFirst(a) - risingFirst(b))
     .slice(0, PANEL_SIZE)
 
   return (
@@ -60,6 +61,7 @@ export function Buzz({
             return (
               <SignalRow
                 key={title.id}
+                onClick={() => onOpen(title.id)}
                 name={title.title}
                 score={String(buzz.points)}
                 percent={buzz.points}
@@ -70,6 +72,11 @@ export function Buzz({
                   <>
                     {/* Band colour never travels without the band's name. */}
                     <Tag tone={BAND_TONE[buzz.band]}>{buzz.band}</Tag>
+                    {/* How many independent sources agree — the reason for
+                        having more than one. */}
+                    {title.attention && title.attention.rising.length > 1 && (
+                      <Tag tone="muted">{title.attention.rising.length} sources</Tag>
+                    )}
                     {/* A fading title is still elevated but its event has
                         passed, so it gets a quiet label. */}
                     {buzz.phase === 'rising' ? (

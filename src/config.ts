@@ -193,6 +193,12 @@ export const SIGNALS = {
   /** Requests in flight per source. These are third-party endpoints being
    * polled on a schedule; there is no reason to be impolite about it. */
   concurrency: 4,
+
+  /** Independent sources that must be rising before a title counts as
+   * confirmed. Two, because the whole point of collecting more than one source
+   * was to tell a broad event from a narrow one — not to average them into a
+   * single more-confident-looking number. */
+  confirmAtSources: 2,
 } as const
 
 /** Google News RSS needs no key. YouTube and TMDB do; both no-op when absent,

@@ -29,6 +29,7 @@ import * as news from './sources/news.js'
 import * as tmdb from './sources/tmdb.js'
 import * as wikipedia from './sources/wikipedia.js'
 import * as youtube from './sources/youtube.js'
+import * as signals from './signals.js'
 import * as store from './store.js'
 import * as trending from './trending.js'
 import type { MediaType, RadarOutput, Title, TitleTrend, TrendingReport } from './types.js'
@@ -126,6 +127,21 @@ async function main(): Promise<void> {
   // like, so the series has to be accumulated before it can say anything —
   // SIGNALS.minHistoryDays governs when a title becomes usable.
   await collectSignals(titles, today, pinned)
+
+  // --- multi-source verdict ----------------------------------------------
+  const attention = signals.attach(titles, {
+    news: await store.load('news'),
+    youtube: await store.load('youtube'),
+    tmdb: await store.load('tmdb'),
+  })
+  console.log(
+    `[signal] ${attention.measured} titles measurable, ${attention.rising} rising, ` +
+      `${attention.confirmed} confirmed by ${SIGNALS.confirmAtSources}+ sources · ` +
+      Object.entries(attention.bySource)
+        .filter(([, n]) => n > 0)
+        .map(([name, n]) => `${name} ${n}`)
+        .join(', '),
+  )
 
   const fired = alerts.build(titles, changes)
   console.log(`[alert] ${fired.length} titles changed inside the alert window`)
