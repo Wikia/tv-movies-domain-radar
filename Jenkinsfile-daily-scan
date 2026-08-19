@@ -4,17 +4,17 @@
 // publishes the result to scriptlr. The dashboard reads what this job writes, so
 // if this stops running the site quietly serves yesterday's answer for ever.
 //
-// The job is idempotent: re-running on the same day overwrites that date's
-// version rather than creating a second one, and the day-over-day diff is
-// anchored to the previous date, so a re-run still reports "what changed since
-// yesterday" rather than "nothing changed".
+// Snapshots are write-once: the deployed bucket rejects replacing an object, so a
+// second run on the same date leaves the published copy alone and says so. The
+// day-over-day diff is anchored to the previous date, so a re-run still reports
+// "what changed since yesterday" rather than "nothing changed".
 
 pipeline {
     agent { label 'linux' }
 
     triggers {
         // 'H' spreads start times across the hour to avoid load spikes; the
-        // exact minute is stable per job. 05:00 UTC leaves Wikipedia's ~4-day
+        // exact minute is stable per job. 05:00 leaves Wikipedia's ~4-day
         // pageview lag and the US news cycle behind us before we read them.
         cron('H 5 * * *')
     }
@@ -71,10 +71,12 @@ pipeline {
                 // under-reports, and run.json carries the real verdict.
                 def report = null
                 try {
-                    if (fileExists('out/run.json')) report = readJSON(file: 'out/run.json')
+                    if (fileExists('out/run.json')) {
+                        report = readJSON(file: 'out/run.json')
+                    }
                 } catch (Exception noWorkspace) {
-                    // The build died before the agent was ready, so there is no
-                    // workspace to read. Nothing to report but the failure itself.
+                    // Died before the agent was ready, so there is no workspace
+                    // to read. Nothing to report but the failure itself.
                     echo "No workspace to read run.json from: ${noWorkspace.message}"
                 }
 
@@ -82,9 +84,6 @@ pipeline {
                     currentBuild.result = 'FAILURE'
                     currentBuild.description = 'no run.json — the scan died before it could report'
                 } else {
-                    def problems = report.steps.findAll { it.status != 'ok' && it.status != 'skipped' }
-                    def summary = problems.collect { "${it.name}: ${it.detail}" } + report.warnings
-
                     if (report.status == 'failed') {
                         currentBuild.result = 'FAILURE'
                     } else if (report.status == 'degraded') {
@@ -93,13 +92,8 @@ pipeline {
                         // them to ignore the alert.
                         currentBuild.result = 'UNSTABLE'
                     }
-
-                    currentBuild.description = [
-                        "${report.counts.titles ?: '?'} titles",
-                        "${report.counts.rising ?: 0} rising",
-                        "${report.counts.confirmed ?: 0} confirmed",
-                        summary ? "· ${summary.join('; ')}" : '',
-                    ].join(' ').trim()
+                    currentBuild.description = "${report.counts.titles ?: '?'} titles, " +
+                        "${report.counts.rising ?: 0} rising, ${report.counts.confirmed ?: 0} confirmed"
                 }
 
                 try {
@@ -113,20 +107,17 @@ pipeline {
     }
 }
 
-// The API keys arrive as one uploaded .env rather than a credential per key:
-// the pipeline already reads .env via --env-file-if-exists, so adding a source
-// later needs no Jenkins change. The file is written into the workspace and
-// removed straight after — the workspace is reused between builds, so leaving a
-// file of keys in it would outlive the run that needed it.
+// The API keys arrive as one uploaded .env rather than a credential per key: the
+// pipeline already reads .env via --env-file-if-exists, so adding a source later
+// needs no Jenkins change.
 //
-// The scriptlr URL is not here: it is an internal hostname with a default in
-// config.ts, not a secret.
+// The credential is OPTIONAL on purpose. Four of the six sources need no keys —
+// the calendar, Wikipedia, Google News and the Fandom export are all keyless — so
+// a missing .env costs the YouTube and TMDB readings and nothing else.
+//
+// The file is removed straight after: the workspace is reused between builds, so
+// a file of keys left in it would outlive the run that needed it.
 def runRadar(String command) {
-    // The credential is optional on purpose. Four of the six sources need no
-    // keys — the calendar, Wikipedia, Google News and the Fandom export are all
-    // keyless — so a missing .env costs the YouTube and TMDB readings and
-    // nothing else. The run reports them as skipped, which is accurate: they are
-    // unconfigured, not broken.
     def wroteEnv = false
     try {
         withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
@@ -147,21 +138,10 @@ def runRadar(String command) {
     }
 }
 
-// Every run posts. Silence is ambiguous — "no message" reads the same whether
-// the scan was healthy or the job never fired — and while this is pointed at a
-// test channel, confirmation that it ran is the whole point.
-def notifyBuild(report) {
-    def result = currentBuild.currentResult
-    def header = "*${result}*: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
-
-    if (report == null) {
-        slackPost('#FF0000', "${header}\nThe scan produced no report at all — it died before it could write one. <!here>")
-        return
-    }
-
-    // Step name -> the service a human would name. Anything not listed is
-    // internal plumbing (diff, posters, render, publish) and reported separately.
-    def apis = [
+// Which service a step name refers to, in the words a person would use. Anything
+// absent from this map is internal plumbing: diff, posters, publish, render.
+def apiNames() {
+    return [
         calendar : 'neutron-api (release calendar)',
         buzz     : 'Wikipedia pageviews',
         news     : 'Google News',
@@ -169,39 +149,69 @@ def notifyBuild(report) {
         tmdb     : 'TMDB',
         trending : 'Fandom trending export',
     ]
+}
 
-    def lines = [header]
-    def healthy = []
+// Up to two messages, in this order:
+//
+//   1. an ALERT, if any source hit an error — posted first and on its own, so it
+//      is not buried inside a message that also says "complete"
+//   2. the OUTCOME — green if the scan finished, red if it did not
+//
+// A source that is merely unconfigured (no key) is not an alert: it would fire
+// every morning until someone adds the key, and a daily alarm nobody can action
+// is one people learn to scroll past. Those are named in the outcome instead.
+def notifyBuild(report) {
+    def link = "<${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
 
-    report.steps.each { step ->
-        def label = apis[step.name]
-        if (label == null) {
-            // Not an API, but a failed publish means nothing downstream sees today.
-            if (step.status == 'failed') lines << ":x: *${step.name}* failed — ${step.detail}"
-            else if (step.status == 'degraded') lines << ":warning: ${step.name} — ${step.detail}"
-            return
-        }
-        if (step.status == 'failed') {
-            lines << ":x: *${label}* pulled no data — ${step.detail}"
-        } else if (step.status == 'degraded') {
-            lines << ":warning: *${label}* — ${step.detail}"
-        } else if (step.status == 'skipped') {
-            lines << ":heavy_minus_sign: *${label}* skipped — ${step.detail}"
-        } else {
-            healthy << label
-        }
+    if (report == null) {
+        slackPost('#FF0000', ":rotating_light: *Radar scan failed* ${link}\nIt died before it could write a report. <!here>")
+        return
     }
 
-    report.warnings.each { lines << ":warning: ${it}" }
+    def apis = apiNames()
+
+    // --- 1. the alert, posted first -----------------------------------------
+    def brokenSources = report.steps.findAll {
+        apis[it.name] && (it.status == 'failed' || it.status == 'degraded')
+    }
+    def brokenOther = report.steps.findAll { !apis[it.name] && it.status == 'failed' }
+
+    if (brokenSources || brokenOther || report.warnings) {
+        def alert = [":warning: *Radar sources need attention* ${link}"]
+        brokenSources.each {
+            def what = it.status == 'failed' ? 'pulled no data' : 'partial data'
+            alert.add(":x: *${apis[it.name]}* — ${what}: ${it.detail}")
+        }
+        brokenOther.each {
+            alert.add(":x: *${it.name}* failed — ${it.detail}")
+        }
+        report.warnings.each {
+            alert.add(":warning: ${it}")
+        }
+        slackPost('#F0AD4E', alert.join('\n'))
+    }
+
+    // --- 2. the outcome -----------------------------------------------------
+    if (currentBuild.currentResult == 'FAILURE') {
+        def why = report.steps.findAll { it.status == 'failed' }.collect { "${it.name}: ${it.detail}" }
+        def body = why ? why.join('\n') : 'See the console log.'
+        slackPost('#FF0000', ":rotating_light: *Radar scan failed* ${link}\n${body}\n<!here>")
+        return
+    }
 
     def counts = report.counts
-    lines << "${counts.titles ?: 0} titles · ${counts.rising ?: 0} rising · " +
-             "${counts.confirmed ?: 0} confirmed" + (report.published ? " · published ${report.today}" : '')
-    if (healthy) lines << ":white_check_mark: ${healthy.join(', ')}"
-    if (result == 'FAILURE') lines << '<!here>'
+    def pulled = report.steps.findAll { apis[it.name] && it.status == 'ok' }.collect { apis[it.name] }
+    def unconfigured = report.steps.findAll { apis[it.name] && it.status == 'skipped' }.collect { apis[it.name] }
 
-    def colour = result == 'FAILURE' ? '#FF0000' : result == 'UNSTABLE' ? '#F0AD4E' : '#7AF371'
-    slackPost(colour, lines.join('\n'))
+    def done = [":white_check_mark: *Radar scan complete* ${link}"]
+    done.add("${counts.titles ?: 0} titles · ${counts.rising ?: 0} rising · ${counts.confirmed ?: 0} confirmed by 2+ sources" + (report.published ? " · published ${report.today}" : ' · not published'))
+    if (pulled) {
+        done.add("Pulled: ${pulled.join(', ')}")
+    }
+    if (unconfigured) {
+        done.add("_Not configured: ${unconfigured.join(', ')}_")
+    }
+    slackPost('#7AF371', done.join('\n'))
 }
 
 def slackPost(String colour, String message) {
