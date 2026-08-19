@@ -27,6 +27,10 @@ export interface RunReport {
 export class Run {
   private readonly started = Date.now()
   private readonly startedAt = new Date().toISOString()
+  // Set as the run learns them, so a report can still be produced from the
+  // failure path — which is the case that most needs one.
+  today = ''
+  published = false
   readonly steps: Step[] = []
   readonly warnings: string[] = []
   readonly counts: Record<string, number> = {}
@@ -53,14 +57,14 @@ export class Run {
     return 'ok'
   }
 
-  finish(today: string, published: boolean): RunReport {
+  finish(): RunReport {
     const finishedAt = new Date().toISOString()
     return {
       startedAt: this.startedAt,
       finishedAt,
       seconds: Math.round((Date.now() - this.started) / 100) / 10,
-      today,
-      published,
+      today: this.today,
+      published: this.published,
       status: this.status,
       steps: this.steps,
       warnings: this.warnings,

@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { BUZZ, ROOT, WIKI_USER_AGENT } from '../config.js'
+import { pooled } from '../pool.js'
 import type { Title } from '../types.js'
 
 const CACHE_FILE = path.join(ROOT, 'data', 'wiki-articles.json')
@@ -43,23 +44,6 @@ async function getJson(url: string, attempts = 3): Promise<unknown> {
     }
   }
   throw new Error(`wikipedia: ${String(lastError)} for ${url}`)
-}
-
-export async function pooled<T, R>(
-  items: T[],
-  limit: number,
-  work: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
-  let next = 0
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (next < items.length) {
-      const i = next++
-      results[i] = await work(items[i]!)
-    }
-  })
-  await Promise.all(workers)
-  return results
 }
 
 async function search(title: Title): Promise<string | null> {

@@ -5,7 +5,7 @@ import path from 'node:path'
 
 import { attach, median } from '../src/buzz.js'
 import { BUZZ, ROOT, WIKI_USER_AGENT } from '../src/config.js'
-import { pooled } from '../src/sources/wikipedia.js'
+import { pooled } from '../src/pool.js'
 import type { Title } from '../src/types.js'
 
 function out(line: string): void {

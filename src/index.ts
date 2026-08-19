@@ -11,7 +11,7 @@ import { BUZZ, HORIZON_DAYS, ROOT, SCRIPTLR, SIGNALS, TMDB_TOKEN, YOUTUBE_KEY } 
 import * as posters from './posters.js'
 import * as publish from './publish.js'
 import * as remote from './remote.js'
-import { Run, summarise } from './report.js'
+import { Run, summarise, type Status } from './report.js'
 import { applyDates, byReleaseDate } from './schedule.js'
 import * as snapshot from './snapshot.js'
 import * as fandom from './sources/fandom.js'
@@ -26,11 +26,13 @@ import * as trending from './trending.js'
 import type { MediaType, RadarOutput, Title, TrendingReport } from './types.js'
 
 const OUT_DIR = path.join(ROOT, 'out')
+const TYPES: MediaType[] = ['movie', 'show']
+
+const run = new Run()
 
 function log(line: string): void {
   if (!process.env.RADAR_QUIET) process.stdout.write(`${line}\n`)
 }
-const TYPES: MediaType[] = ['movie', 'show']
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -54,11 +56,15 @@ async function main(): Promise<void> {
   // Publishing is opt-in so a local run can never overwrite shared history, and
   // a pinned --today never publishes for the same reason it writes no snapshot:
   // today's numbers filed under a past date would corrupt the series for good.
-  const run = new Run()
   const publishing = Boolean(values.publish) && !pinned
   if (publishing && !remote.canWrite()) {
     throw new Error('--publish needs SCRIPTLR_WRITE_URL')
   }
+  if (values.publish && pinned) {
+    run.warn('--publish ignored: --today is pinned to a past date')
+  }
+  run.today = today.toISOString().slice(0, 10)
+  run.published = publishing
   if (remote.canRead()) {
     const filled = await publish.hydrateCaches()
     log(`[remote] reading from ${SCRIPTLR.readUrl}${filled ? ` · seeded ${filled} id caches` : ''}`)
@@ -93,7 +99,13 @@ async function main(): Promise<void> {
 
   let wikis = await fandom.load()
   if (wikis.length === 0) wikis = await publish.loadTrending()
-  else if (publishing) await publish.publishTrending(wikis)
+  else if (publishing) {
+    try {
+      await publish.publishTrending(wikis)
+    } catch (error) {
+      run.step('trending-publish', 'degraded', message(error))
+    }
+  }
   let trendingReport: TrendingReport | null = null
   if (wikis.length === 0) {
     log(`[trend] no first-party export at data/fandom_trending.csv — running without ` + `the wiki signal (see README "First-party data sync")`)
@@ -207,8 +219,8 @@ async function main(): Promise<void> {
       log(`[remote] published ${remote.versionFor(output.today)} to ${SCRIPTLR.writeUrl}`)
       run.step('publish', 'ok', `${remote.versionFor(output.today)}`)
     } catch (error) {
-      run.step('publish', 'failed', error instanceof Error ? error.message : String(error))
-      log(`[remote] publish FAILED: ${error instanceof Error ? error.message : String(error)}`)
+      run.step('publish', 'failed', message(error))
+      log(`[remote] publish FAILED: ${message(error)}`)
     }
   } else {
     run.step('publish', 'skipped', pinned ? 'pinned --today' : 'no --publish')
@@ -224,14 +236,26 @@ async function main(): Promise<void> {
     log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
   }
 
-  const report = run.finish(output.today, publishing)
-  await writeFile(path.join(OUT_DIR, 'run.json'), JSON.stringify(report, null, 2))
-  log(summarise(report))
+}
 
-  // Non-zero on a failed step so a scheduler notices. `degraded` stays 0: the
-  // calendar shipped, and waking someone for a flat YouTube day trains them to
-  // ignore the alert.
-  if (report.status === 'failed') process.exitCode = 1
+function message(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+// One source's turn at recording a reading. Each of the three degrades on its
+// own — a bad day at YouTube must not cost the calendar — so a failure is
+// caught, recorded and stepped over rather than thrown.
+async function record(
+  name: string,
+  work: () => Promise<{ status: Status; detail: string }>,
+): Promise<void> {
+  try {
+    const { status, detail } = await work()
+    run.step(name, status, detail)
+  } catch (error) {
+    log(`[${name}] skipped: ${message(error)}`)
+    run.step(name, 'failed', message(error))
+  }
 }
 
 async function collectSignals(
@@ -247,54 +271,85 @@ async function collectSignals(
     return
   }
 
-  try {
+  await record('news', async () => {
     const store0 = await store.load('news')
     const result = await news.collect(titles, today, store0)
     await store.save('news', store0, result.readings, today, publishing)
-    log(`[news] ${result.queried} day-queries, ${result.pending} still to backfill, ` + `${result.skipped} too generic to search, ${result.failed} failed · ` + `${store.mature(store0, 'onTopic')} titles with ${SIGNALS.minHistoryDays}+ days`)
-    run.step('news', result.failed > 0 ? 'degraded' : 'ok', `${result.queried} queries, ${result.failed} failed, ${result.pending} pending`)
-    if (result.pending > 0) run.warn(`news backfill incomplete — ${result.pending} day-queries still owed`)
-  } catch (error) {
-    log(`[news] skipped: ${error instanceof Error ? error.message : String(error)}`)
-    run.step('news', 'failed', error instanceof Error ? error.message : String(error))
-  }
+    log(
+      `[news] ${result.queried} day-queries, ${result.pending} still to backfill, ` +
+        `${result.skipped} too generic to search, ${result.failed} failed · ` +
+        `${store.mature(store0, 'onTopic')} titles with ${SIGNALS.minHistoryDays}+ days`,
+    )
+    if (result.pending > 0) {
+      run.warn(`news backfill incomplete — ${result.pending} day-queries still owed`)
+    }
+    return {
+      status: result.failed > 0 ? 'degraded' : 'ok',
+      detail: `${result.queried} queries, ${result.failed} failed, ${result.pending} pending`,
+    }
+  })
 
   if (!YOUTUBE_KEY) {
     log('[yt] no YOUTUBE_API_KEY — skipping (see README "Signal sources")')
     run.step('youtube', 'skipped', 'no YOUTUBE_API_KEY')
   } else {
-    try {
+    await record('youtube', async () => {
       const cache = await youtube.resolveTrailers(titles, today)
       const store0 = await store.load('youtube')
       const result = await youtube.collect(titles, today, cache)
       await store.save('youtube', store0, result.readings, today, publishing)
-      log(`[yt] ${result.resolved} trailers resolved, ${result.polled} polled · ` + `${store.mature(store0, 'views')} titles with ${SIGNALS.minHistoryDays}+ days`)
-      run.step('youtube', result.polled === 0 ? 'degraded' : 'ok', `${result.resolved} resolved, ${result.polled} polled`)
-    } catch (error) {
-      log(`[yt] skipped: ${error instanceof Error ? error.message : String(error)}`)
-      run.step('youtube', 'failed', error instanceof Error ? error.message : String(error))
-    }
+      log(
+        `[yt] ${result.resolved} trailers resolved, ${result.polled} polled · ` +
+          `${store.mature(store0, 'views')} titles with ${SIGNALS.minHistoryDays}+ days`,
+      )
+      return {
+        status: result.polled === 0 ? 'degraded' : 'ok',
+        detail: `${result.resolved} resolved, ${result.polled} polled`,
+      }
+    })
   }
 
   if (!TMDB_TOKEN) {
     log('[tmdb] no TMDB_ACCESS_TOKEN — skipping (see README "Signal sources")')
     run.step('tmdb', 'skipped', 'no TMDB_ACCESS_TOKEN')
   } else {
-    try {
+    await record('tmdb', async () => {
       const cache = await tmdb.resolveIds(titles, today)
       const store0 = await store.load('tmdb')
       const result = await tmdb.collect(titles, today, cache)
       await store.save('tmdb', store0, result.readings, today, publishing)
-      log(`[tmdb] ${result.resolved} ids resolved, ${result.polled} polled · ` + `${store.mature(store0, 'popularity')} titles with ${SIGNALS.minHistoryDays}+ days`)
-      run.step('tmdb', result.polled === 0 ? 'degraded' : 'ok', `${result.resolved} ids, ${result.polled} polled`)
-    } catch (error) {
-      log(`[tmdb] skipped: ${error instanceof Error ? error.message : String(error)}`)
-      run.step('tmdb', 'failed', error instanceof Error ? error.message : String(error))
-    }
+      log(
+        `[tmdb] ${result.resolved} ids resolved, ${result.polled} polled · ` +
+          `${store.mature(store0, 'popularity')} titles with ${SIGNALS.minHistoryDays}+ days`,
+      )
+      return {
+        status: result.polled === 0 ? 'degraded' : 'ok',
+        detail: `${result.resolved} ids, ${result.polled} polled`,
+      }
+    })
   }
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`[fatal] ${error instanceof Error ? error.message : String(error)}\n`)
-  process.exit(1)
-})
+// The report is written whatever happens. A run that dies mid-way is precisely
+// the one something downstream needs to hear about, and a missing run.json is
+// indistinguishable from a cron that never fired.
+async function finish(): Promise<void> {
+  const report = run.finish()
+  await mkdir(OUT_DIR, { recursive: true }).catch(() => undefined)
+  await writeFile(path.join(OUT_DIR, 'run.json'), JSON.stringify(report, null, 2)).catch(() =>
+    undefined,
+  )
+  log(summarise(report))
+  // Non-zero only on a failed step, so a scheduler notices. `degraded` stays 0:
+  // the calendar shipped, and waking someone for a flat YouTube day trains them
+  // to ignore the alert.
+  if (report.status === 'failed') process.exitCode = 1
+}
+
+try {
+  await main()
+} catch (error) {
+  run.step('run', 'failed', message(error))
+  process.stderr.write(`[fatal] ${message(error)}\n`)
+}
+await finish()

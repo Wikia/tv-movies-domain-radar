@@ -1,13 +1,10 @@
-import { SIGNALS } from '../config.js'
+import { SIGNALS, USER_AGENT } from '../config.js'
+import { pooled } from '../pool.js'
 import type { SignalStore } from '../store.js'
 import { isoDay } from '../store.js'
 import type { Title } from '../types.js'
-import { pooled } from './wikipedia.js'
 
 const ENDPOINT = 'https://news.google.com/rss/search'
-
-const USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 
 // Single-word titles are still refused. Filtering on the headline rescues some
 // of them — "Animals" goes from 50 articles to 6 that are genuinely about the

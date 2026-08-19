@@ -1,4 +1,5 @@
 import { SCRIPTLR } from './config.js'
+import { sleep } from './pool.js'
 
 // scriptlr stores files at /{appId}/{folder}/{version}/{filename}. `version` is
 // a semver segment and we use the date, so `latest` resolves to the newest day.
@@ -78,6 +79,3 @@ export async function put(
   )
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
