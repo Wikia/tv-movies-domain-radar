@@ -107,26 +107,73 @@ pipeline {
     }
 }
 
-// The API keys arrive as one uploaded .env rather than a credential per key: the
-// pipeline already reads .env via --env-file-if-exists, so adding a source later
-// needs no Jenkins change.
+// Secrets reach the pipeline as a .env in the workspace, which it already reads
+// via --env-file-if-exists. Two sources are tried, in order:
 //
-// The credential is OPTIONAL on purpose. Four of the six sources need no keys —
-// the calendar, Wikipedia, Google News and the Fandom export are all keyless — so
-// a missing .env costs the YouTube and TMDB readings and nothing else.
+//   1. Vault, using VAULT_TOKEN_SJC — a master-level global, so nothing has to be
+//      added to Jenkins. This is where the keys belong.
+//   2. a `tv-movies-radar-env` Secret file credential, if someone uploaded one.
 //
-// The file is removed straight after: the workspace is reused between builds, so
-// a file of keys left in it would outlive the run that needed it.
-def runRadar(String command) {
-    def wroteEnv = false
+// Both are OPTIONAL. Four of the six sources need no keys at all — the calendar,
+// Wikipedia, Google News and the Fandom export are keyless — so with neither
+// available the run loses the YouTube and TMDB readings and nothing else.
+def loadSecrets() {
+    if (env.VAULT_TOKEN_SJC) {
+        try {
+            // Masked so the token cannot reach the console, the same wrapper the
+            // functional-tests jobs use. `set +x` keeps it out of the trace too.
+            wrap([$class: 'MaskPasswordsBuildWrapper',
+                  varPasswordPairs: [[password: env.VAULT_TOKEN_SJC, var: 'VAULT_TOKEN_SJC']]]) {
+                nodejs('v22 LATEST') {
+                    sh(label: 'read secrets from vault', script: '''
+set +x
+found=0
+# The store is KV v1 — confirmed with `vault read`, which only v1 answers, and
+# by the refresh_interval field in its output. So the fields sit directly under
+# .data at /secret/..., and the v2 path is only a fallback in case it is ever
+# migrated. Two hosts because vault.service.consul is what the functional-tests
+# jobs use, while vault-load writes through active.vault.service.sjc.consul.
+for host in "${VAULT_ADDR:-https://vault.service.consul:8200}" https://active.vault.service.sjc.consul:8200; do
+  for p in v1/secret/app/prod/tv-movies-domain-radar/api-keys v1/secret/data/app/prod/tv-movies-domain-radar/api-keys; do
+    if curl -sf -k -m 15 -H "X-Vault-Token: $VAULT_TOKEN_SJC" "$host/$p" -o vault.json; then
+      found=1
+      break 2
+    fi
+  done
+done
+if [ "$found" != "1" ]; then
+  echo "vault: no readable path for app/prod/tv-movies-domain-radar/api-keys"
+  exit 1
+fi
+node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("vault.json","utf8"));const d=(r.data&&r.data.data)||r.data||{};const m={youtube_api_key:"YOUTUBE_API_KEY",tmdb_access_token:"TMDB_ACCESS_TOKEN",fastly_image_secret:"FASTLY_IMAGE_SECRET"};const out=Object.keys(m).filter(k=>d[k]).map(k=>m[k]+"="+d[k]);if(!out.length){throw new Error("vault payload has none of the expected fields")}fs.writeFileSync(".env",out.join(String.fromCharCode(10))+String.fromCharCode(10))'
+rm -f vault.json
+chmod 600 .env
+''')
+                }
+            }
+            echo 'Secrets loaded from Vault.'
+            return true
+        } catch (Exception vaultFailed) {
+            echo "Vault read failed (${vaultFailed.message}) — falling back to the credential."
+        }
+    }
+
     try {
         withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
             sh 'cp "$ENV_FILE" .env && chmod 600 .env'
         }
-        wroteEnv = true
+        echo 'Secrets loaded from the tv-movies-radar-env credential.'
+        return true
     } catch (Exception missing) {
-        echo 'No tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+        echo 'No Vault secret and no tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+        return false
     }
+}
+
+// The .env is removed straight after: the workspace is reused between builds, so
+// a file of keys left in it would outlive the run that needed it.
+def runRadar(String command) {
+    def wroteEnv = loadSecrets()
     try {
         nodejs('v22 LATEST') {
             sh command
