@@ -94,9 +94,25 @@ export async function publishTrending(wikis: TrendingWiki[]): Promise<void> {
 const RADAR_FOLDER = 'radar'
 const RADAR_FILE = 'radar.json'
 
-export async function publishRadar(output: RadarOutput): Promise<void> {
-  if (!remote.canWrite()) return
-  await remote.put(RADAR_FOLDER, remote.versionFor(output.today), RADAR_FILE, output)
+/** written = published now · exists = already published today · blocked = the
+ * slot holds another day's data and cannot be corrected. */
+export type PublishResult = 'written' | 'exists' | 'blocked'
+
+export async function publishRadar(output: RadarOutput): Promise<PublishResult> {
+  if (!remote.canWrite()) return 'exists'
+  const version = remote.versionFor(output.today)
+
+  // Objects are write-once here, so a version occupied by something else can
+  // never be corrected from this side. That is worth saying out loud, but not
+  // worth failing the run over: radar.json is derived and rebuildable, while the
+  // readings — which publish to their own unoccupied versions — are not. Losing
+  // a day of the served file is a stale dashboard; losing the readings would be
+  // permanent.
+  const existing = await remote.get<RadarOutput>(RADAR_FOLDER, RADAR_FILE, version)
+  if (existing.kind === 'found') {
+    return existing.body.today === output.today ? 'exists' : 'blocked'
+  }
+  return (await remote.put(RADAR_FOLDER, version, RADAR_FILE, output)) ? 'written' : 'exists'
 }
 
 export async function fetchRadar(day: string): Promise<RadarOutput | null> {

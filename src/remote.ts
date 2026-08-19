@@ -22,8 +22,15 @@ function url(base: string, folder: string, version: string, filename: string): s
   return `${base.replace(/\/$/, '')}/${SCRIPTLR.appId}/${folder}/${version}/${filename}`
 }
 
+// Pandora is secure-by-default: every route is blocked unless it carries this
+// header, except the handful annotated @PublicResource. The retrieve endpoint is
+// public; registering an app and uploading are not, so without it every write
+// 403s. The filter only checks the header is present, not its value.
 function headers(): Record<string, string> {
-  return SCRIPTLR.token ? { Authorization: `Bearer ${SCRIPTLR.token}` } : {}
+  return {
+    'X-Wikia-Internal-Request': '1',
+    ...(SCRIPTLR.token ? { Authorization: `Bearer ${SCRIPTLR.token}` } : {}),
+  }
 }
 
 export async function get<T>(
@@ -50,12 +57,23 @@ export async function get<T>(
   )
 }
 
+// Objects are write-once in the deployed bucket: re-POSTing a path that already
+// exists returns a 500, not a 200 or a 409. Verified against the live service —
+// the code has no precondition, so this is the bucket's or the service account's
+// doing, and it cannot be worked around from here.
+//
+// So a day's snapshot is written once. A second run on the same date leaves the
+// published copy alone and says so, rather than failing a build that did nothing
+// wrong. Returns true when it actually wrote.
 export async function put(
   folder: string,
   version: string,
   filename: string,
   body: unknown,
-): Promise<void> {
+): Promise<boolean> {
+  const existing = await get(folder, filename, version)
+  if (existing.kind === 'found') return false
+
   const target = url(SCRIPTLR.writeUrl, folder, version, filename)
   const payload = JSON.stringify(body)
   let lastError: unknown
@@ -67,7 +85,7 @@ export async function put(
         body: payload,
       })
       if (!res.ok) throw new Error(`HTTP ${res.status} ${(await res.text()).slice(0, 200)}`)
-      return
+      return true
     } catch (error) {
       lastError = error
       if (attempt < SCRIPTLR.retries) await sleep(attempt * 500)

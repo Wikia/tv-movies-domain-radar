@@ -4,38 +4,36 @@
 // publishes the result to scriptlr. The dashboard reads what this job writes, so
 // if this stops running the site quietly serves yesterday's answer for ever.
 //
-// The job is idempotent: re-running on the same day overwrites that date's
-// version rather than creating a second one, and the day-over-day diff is
-// anchored to the previous date, so a re-run still reports "what changed since
-// yesterday" rather than "nothing changed".
+// Snapshots are write-once: the deployed bucket rejects replacing an object, so a
+// second run on the same date leaves the published copy alone and says so. The
+// day-over-day diff is anchored to the previous date, so a re-run still reports
+// "what changed since yesterday" rather than "nothing changed".
 
 pipeline {
     agent { label 'linux' }
 
     triggers {
         // 'H' spreads start times across the hour to avoid load spikes; the
-        // exact minute is stable per job. 05:00 UTC leaves Wikipedia's ~4-day
+        // exact minute is stable per job. 05:00 leaves Wikipedia's ~4-day
         // pageview lag and the US news cycle behind us before we read them.
         cron('H 5 * * *')
+    }
+
+    parameters {
+        // Default TRUE because the scheduled build uses defaults: with this off,
+        // the cron would scan every morning and upload nothing, which looks
+        // healthy from the outside. Untick it for a dry run.
+        booleanParam(
+            name: 'PUBLISH',
+            defaultValue: true,
+            description: 'Upload snapshots to scriptlr. Untick for a dry run that scans but publishes nothing.'
+        )
     }
 
     options {
         timeout(time: 45, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '60'))
         disableConcurrentBuilds()
-    }
-
-    environment {
-        // Read is the public multi-region deployment; write is on-prem, which is
-        // the only one whose upload routes exist. This agent must reach on-prem.
-        SCRIPTLR_READ_URL  = credentials('tv-movies-radar-scriptlr-read-url')
-        SCRIPTLR_WRITE_URL = credentials('tv-movies-radar-scriptlr-write-url')
-        YOUTUBE_API_KEY    = credentials('tv-movies-radar-youtube-key')
-        TMDB_ACCESS_TOKEN  = credentials('tv-movies-radar-tmdb-token')
-        // Without this, published titles carry no poster art at all: the local
-        // thumbnail cache is written to the workspace and means nothing to a
-        // reader anywhere else, so a publishing run skips it deliberately.
-        FASTLY_IMAGE_SECRET = credentials('tv-movies-radar-fastly-image-secret')
     }
 
     stages {
@@ -50,11 +48,17 @@ pipeline {
             }
         }
 
-        stage('Scan and publish') {
+        stage('Scan') {
+            when { expression { !params.PUBLISH } }
             steps {
-                nodejs('v22 LATEST') {
-                    sh 'npm run scan:publish'
-                }
+                runRadar('npm run scan')
+            }
+        }
+
+        stage('Scan and publish') {
+            when { expression { params.PUBLISH } }
+            steps {
+                runRadar('npm run scan:publish')
             }
         }
     }
@@ -65,15 +69,21 @@ pipeline {
                 // The pipeline degrades rather than dying: a bad day at YouTube
                 // costs that reading, not the calendar. So the exit code alone
                 // under-reports, and run.json carries the real verdict.
-                def report = fileExists('out/run.json') ? readJSON(file: 'out/run.json') : null
+                def report = null
+                try {
+                    if (fileExists('out/run.json')) {
+                        report = readJSON(file: 'out/run.json')
+                    }
+                } catch (Exception noWorkspace) {
+                    // Died before the agent was ready, so there is no workspace
+                    // to read. Nothing to report but the failure itself.
+                    echo "No workspace to read run.json from: ${noWorkspace.message}"
+                }
 
                 if (report == null) {
                     currentBuild.result = 'FAILURE'
                     currentBuild.description = 'no run.json — the scan died before it could report'
                 } else {
-                    def problems = report.steps.findAll { it.status != 'ok' && it.status != 'skipped' }
-                    def summary = problems.collect { "${it.name}: ${it.detail}" } + report.warnings
-
                     if (report.status == 'failed') {
                         currentBuild.result = 'FAILURE'
                     } else if (report.status == 'degraded') {
@@ -82,38 +92,125 @@ pipeline {
                         // them to ignore the alert.
                         currentBuild.result = 'UNSTABLE'
                     }
-
-                    currentBuild.description = [
-                        "${report.counts.titles ?: '?'} titles",
-                        "${report.counts.rising ?: 0} rising",
-                        "${report.counts.confirmed ?: 0} confirmed",
-                        summary ? "· ${summary.join('; ')}" : '',
-                    ].join(' ').trim()
+                    currentBuild.description = "${report.counts.titles ?: '?'} titles, " +
+                        "${report.counts.rising ?: 0} rising, ${report.counts.confirmed ?: 0} confirmed"
                 }
 
-                archiveArtifacts artifacts: 'out/run.json,out/radar.json', allowEmptyArchive: true
+                try {
+                    archiveArtifacts artifacts: 'out/run.json,out/radar.json', allowEmptyArchive: true
+                } catch (Exception noWorkspace) {
+                    echo "Nothing to archive: ${noWorkspace.message}"
+                }
                 notifyBuild(report)
             }
         }
     }
 }
 
-// Every run posts. Silence is ambiguous — "no message" reads the same whether
-// the scan was healthy or the job never fired — and while this is pointed at a
-// test channel, confirmation that it ran is the whole point.
-def notifyBuild(report) {
-    def result = currentBuild.currentResult
-    def header = "*${result}*: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
-
-    if (report == null) {
-        slackPost('#FF0000', "${header}
-The scan produced no report at all — it died before it could write one. <!here>")
-        return
+// Secrets reach the pipeline as a .env in the workspace, which it already reads
+// via --env-file-if-exists. Two sources are tried, in order:
+//
+//   1. Vault, using VAULT_TOKEN_SJC — a master-level global, so nothing has to be
+//      added to Jenkins. This is where the keys belong.
+//   2. a `tv-movies-radar-env` Secret file credential, if someone uploaded one.
+//
+// Both are OPTIONAL. Four of the six sources need no keys at all — the calendar,
+// Wikipedia, Google News and the Fandom export are keyless — so with neither
+// available the run loses the YouTube and TMDB readings and nothing else.
+def loadSecrets() {
+    // The token reaches jobs two different ways on this master: as a global env
+    // var (how the functional-tests jobs use it) or as the credential
+    // `default-vault-sjc-token`. Try the env var, then bind the credential —
+    // guessing wrong means silently skipping Vault, which looks like a missing
+    // secret rather than a misconfigured job.
+    if (env.VAULT_TOKEN_SJC) {
+        if (readVault()) {
+            return true
+        }
+    } else {
+        try {
+            withCredentials([string(credentialsId: 'default-vault-sjc-token', variable: 'VAULT_TOKEN_SJC')]) {
+                if (readVault()) {
+                    return true
+                }
+            }
+        } catch (Exception noToken) {
+            echo "No Vault token available (${noToken.message})."
+        }
     }
 
-    // Step name -> the service a human would name. Anything not listed is
-    // internal plumbing (diff, posters, render, publish) and reported separately.
-    def apis = [
+    try {
+        withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
+            sh 'cp "$ENV_FILE" .env && chmod 600 .env'
+        }
+        echo 'Secrets loaded from the tv-movies-radar-env credential.'
+        return true
+    } catch (Exception missing) {
+        echo 'No Vault secret and no tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+        return false
+    }
+}
+
+def readVault() {
+        try {
+            // Masked so the token cannot reach the console, the same wrapper the
+            // functional-tests jobs use. `set +x` keeps it out of the trace too.
+            wrap([$class: 'MaskPasswordsBuildWrapper',
+                  varPasswordPairs: [[password: env.VAULT_TOKEN_SJC, var: 'VAULT_TOKEN_SJC']]]) {
+                nodejs('v22 LATEST') {
+                    sh(label: 'read secrets from vault', script: '''
+set +x
+found=0
+# The store is KV v1 — confirmed with `vault read`, which only v1 answers, and
+# by the refresh_interval field in its output. So the fields sit directly under
+# .data at /secret/..., and the v2 path is only a fallback in case it is ever
+# migrated. Two hosts because vault.service.consul is what the functional-tests
+# jobs use, while vault-load writes through active.vault.service.sjc.consul.
+for host in "${VAULT_ADDR:-https://vault.service.consul:8200}" https://active.vault.service.sjc.consul:8200; do
+  for p in v1/secret/app/prod/tv-movies-domain-radar/api-keys v1/secret/data/app/prod/tv-movies-domain-radar/api-keys; do
+    if curl -sf -k -m 15 -H "X-Vault-Token: $VAULT_TOKEN_SJC" "$host/$p" -o vault.json; then
+      found=1
+      break 2
+    fi
+  done
+done
+if [ "$found" != "1" ]; then
+  echo "vault: no readable path for app/prod/tv-movies-domain-radar/api-keys"
+  exit 1
+fi
+node -e 'const fs=require("fs");const r=JSON.parse(fs.readFileSync("vault.json","utf8"));const d=(r.data&&r.data.data)||r.data||{};const m={youtube_api_key:"YOUTUBE_API_KEY",tmdb_access_token:"TMDB_ACCESS_TOKEN",fastly_image_secret:"FASTLY_IMAGE_SECRET"};const out=Object.keys(m).filter(k=>d[k]).map(k=>m[k]+"="+d[k]);if(!out.length){throw new Error("vault payload has none of the expected fields")}fs.writeFileSync(".env",out.join(String.fromCharCode(10))+String.fromCharCode(10))'
+rm -f vault.json
+chmod 600 .env
+''')
+                }
+            }
+        echo 'Secrets loaded from Vault.'
+        return true
+    } catch (Exception vaultFailed) {
+        echo "Vault read failed (${vaultFailed.message}) — falling back to the credential."
+        return false
+    }
+}
+
+// The .env is removed straight after: the workspace is reused between builds, so
+// a file of keys left in it would outlive the run that needed it.
+def runRadar(String command) {
+    def wroteEnv = loadSecrets()
+    try {
+        nodejs('v22 LATEST') {
+            sh command
+        }
+    } finally {
+        if (wroteEnv) {
+            sh 'rm -f .env'
+        }
+    }
+}
+
+// Which service a step name refers to, in the words a person would use. Anything
+// absent from this map is internal plumbing: diff, posters, publish, render.
+def apiNames() {
+    return [
         calendar : 'neutron-api (release calendar)',
         buzz     : 'Wikipedia pageviews',
         news     : 'Google News',
@@ -121,40 +218,69 @@ The scan produced no report at all — it died before it could write one. <!here
         tmdb     : 'TMDB',
         trending : 'Fandom trending export',
     ]
+}
 
-    def lines = [header]
-    def healthy = []
+// Up to two messages, in this order:
+//
+//   1. an ALERT, if any source hit an error — posted first and on its own, so it
+//      is not buried inside a message that also says "complete"
+//   2. the OUTCOME — green if the scan finished, red if it did not
+//
+// A source that is merely unconfigured (no key) is not an alert: it would fire
+// every morning until someone adds the key, and a daily alarm nobody can action
+// is one people learn to scroll past. Those are named in the outcome instead.
+def notifyBuild(report) {
+    def link = "<${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
 
-    report.steps.each { step ->
-        def label = apis[step.name]
-        if (label == null) {
-            // Not an API, but a failed publish means nothing downstream sees today.
-            if (step.status == 'failed') lines << ":x: *${step.name}* failed — ${step.detail}"
-            else if (step.status == 'degraded') lines << ":warning: ${step.name} — ${step.detail}"
-            return
-        }
-        if (step.status == 'failed') {
-            lines << ":x: *${label}* pulled no data — ${step.detail}"
-        } else if (step.status == 'degraded') {
-            lines << ":warning: *${label}* — ${step.detail}"
-        } else if (step.status == 'skipped') {
-            lines << ":heavy_minus_sign: *${label}* skipped — ${step.detail}"
-        } else {
-            healthy << label
-        }
+    if (report == null) {
+        slackPost('#FF0000', ":rotating_light: *Radar scan failed* ${link}\nIt died before it could write a report. <!here>")
+        return
     }
 
-    report.warnings.each { lines << ":warning: ${it}" }
+    def apis = apiNames()
+
+    // --- 1. the alert, posted first -----------------------------------------
+    def brokenSources = report.steps.findAll {
+        apis[it.name] && (it.status == 'failed' || it.status == 'degraded')
+    }
+    def brokenOther = report.steps.findAll { !apis[it.name] && it.status == 'failed' }
+
+    if (brokenSources || brokenOther || report.warnings) {
+        def alert = [":warning: *Radar sources need attention* ${link}"]
+        brokenSources.each {
+            def what = it.status == 'failed' ? 'pulled no data' : 'partial data'
+            alert.add(":x: *${apis[it.name]}* — ${what}: ${it.detail}")
+        }
+        brokenOther.each {
+            alert.add(":x: *${it.name}* failed — ${it.detail}")
+        }
+        report.warnings.each {
+            alert.add(":warning: ${it}")
+        }
+        slackPost('#F0AD4E', alert.join('\n'))
+    }
+
+    // --- 2. the outcome -----------------------------------------------------
+    if (currentBuild.currentResult == 'FAILURE') {
+        def why = report.steps.findAll { it.status == 'failed' }.collect { "${it.name}: ${it.detail}" }
+        def body = why ? why.join('\n') : 'See the console log.'
+        slackPost('#FF0000', ":rotating_light: *Radar scan failed* ${link}\n${body}\n<!here>")
+        return
+    }
 
     def counts = report.counts
-    lines << "${counts.titles ?: 0} titles · ${counts.rising ?: 0} rising · " +
-             "${counts.confirmed ?: 0} confirmed" + (report.published ? " · published ${report.today}" : '')
-    if (healthy) lines << ":white_check_mark: ${healthy.join(', ')}"
-    if (result == 'FAILURE') lines << '<!here>'
+    def pulled = report.steps.findAll { apis[it.name] && it.status == 'ok' }.collect { apis[it.name] }
+    def unconfigured = report.steps.findAll { apis[it.name] && it.status == 'skipped' }.collect { apis[it.name] }
 
-    def colour = result == 'FAILURE' ? '#FF0000' : result == 'UNSTABLE' ? '#F0AD4E' : '#7AF371'
-    slackPost(colour, lines.join('
-'))
+    def done = [":white_check_mark: *Radar scan complete* ${link}"]
+    done.add("${counts.titles ?: 0} titles · ${counts.rising ?: 0} rising · ${counts.confirmed ?: 0} confirmed by 2+ sources" + (report.published ? " · published ${report.today}" : ' · not published'))
+    if (pulled) {
+        done.add("Pulled: ${pulled.join(', ')}")
+    }
+    if (unconfigured) {
+        done.add("_Not configured: ${unconfigured.join(', ')}_")
+    }
+    slackPost('#7AF371', done.join('\n'))
 }
 
 def slackPost(String colour, String message) {
