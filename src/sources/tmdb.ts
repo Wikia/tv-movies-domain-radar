@@ -5,7 +5,7 @@ import { ROOT, SIGNALS, TMDB_TOKEN } from '../config.js'
 import type { SignalStore } from '../store.js'
 import { isoDay } from '../store.js'
 import type { Title } from '../types.js'
-import { pooled } from './wikipedia.js'
+import { pooled } from '../pool.js'
 
 const API = 'https://api.themoviedb.org/3'
 const CACHE_FILE = path.join(ROOT, 'data', 'tmdb-ids.json')

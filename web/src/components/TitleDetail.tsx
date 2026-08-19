@@ -128,7 +128,7 @@ const SOURCE_LABEL: Record<SourceSignal['source'], string> = {
 
 const METRIC_LABEL: Record<string, string> = {
   views: 'views/day',
-  articles: 'articles/day',
+  onTopic: 'articles/day',
   popularity: 'popularity',
 }
 

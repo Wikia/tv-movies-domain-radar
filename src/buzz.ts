@@ -26,14 +26,18 @@ interface Raw {
 }
 
 export function measure(series: number[], minBaseline: number = BUZZ.minBaselineViews): Raw | null {
-  if (series.length < BUZZ.baselineDays + BUZZ.recentDays) return null
+  // Use as much baseline as the series has, capped at baselineDays. A young
+  // source is noisier, not silent — and `days` travels with every reading, so a
+  // thin baseline stays visible rather than passing for a mature one.
+  const available = series.length - BUZZ.recentDays
+  if (available < BUZZ.minBaselineDays) return null
+  const window = Math.min(available, BUZZ.baselineDays)
   const recent = mean(series.slice(-BUZZ.recentDays))
-  const baseline = median(series.slice(-(BUZZ.baselineDays + BUZZ.recentDays), -BUZZ.recentDays))
+  const baseline = median(series.slice(-(window + BUZZ.recentDays), -BUZZ.recentDays))
   if (baseline < minBaseline) return null
 
-  const previous = median(
-    series.slice(-(BUZZ.momentumDays + BUZZ.recentDays), -BUZZ.recentDays),
-  )
+  const momentumWindow = Math.min(available, BUZZ.momentumDays)
+  const previous = median(series.slice(-(momentumWindow + BUZZ.recentDays), -BUZZ.recentDays))
   return {
     recent,
     baseline,

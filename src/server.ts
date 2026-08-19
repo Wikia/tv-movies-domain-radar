@@ -47,7 +47,7 @@ async function serveRadar(res: http.ServerResponse): Promise<void> {
   } catch {
     sendJson(res, 404, {
       error: 'No radar data yet.',
-      hint: 'Run `npm run radar` to generate out/radar.json.',
+      hint: 'Run `npm run scan` to generate out/radar.json.',
     })
   }
 }

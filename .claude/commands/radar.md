@@ -31,7 +31,7 @@ Regenerate the release radar. All commands run from the repo root.
 
    ```bash
    npm install   # first time only
-   npm run radar
+   npm run scan
    ```
 
    Flags: `--horizon N` (forward window, default 90),

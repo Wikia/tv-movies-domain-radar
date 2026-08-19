@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(npm install)",
-      "Bash(npm run radar:*)",
+      "Bash(npm run scan:*)",
       "Bash(npm run typecheck)",
       "Bash(npx tsc --noEmit)",
       "Bash(git status)",

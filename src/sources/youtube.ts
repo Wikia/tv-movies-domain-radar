@@ -5,21 +5,26 @@ import { ROOT, SIGNALS, YOUTUBE_KEY } from '../config.js'
 import type { SignalStore } from '../store.js'
 import { isoDay } from '../store.js'
 import type { Title } from '../types.js'
-import { pooled } from './wikipedia.js'
+import { pooled } from '../pool.js'
 
 const API = 'https://www.googleapis.com/youtube/v3'
 const CACHE_FILE = path.join(ROOT, 'data', 'youtube-videos.json')
 
-interface CacheEntry {
+export interface CacheEntry {
   videoId: string | null
   publishedAt?: string
   channel?: string
   videoTitle?: string
   checked: string
+  // Set by `npm run trailer set`. Search picked the wrong video (or none), a
+  // human corrected it, and no later run may undo that.
+  pinned?: true
 }
-type Cache = Record<string, CacheEntry>
+export type Cache = Record<string, CacheEntry>
 
-function cacheKey(title: Title): string {
+export const TRAILER_CACHE = CACHE_FILE
+
+export function cacheKey(title: Title): string {
   return `${title.title}|${title.type}|${title.releaseDate?.slice(0, 4) ?? '?'}`
 }
 
@@ -79,6 +84,7 @@ export async function resolveTrailers(titles: Title[], today: Date): Promise<Cac
   const needed = titles.filter((title) => {
     const hit = cache[cacheKey(title)]
     if (!hit) return true
+    if (hit.pinned) return false
     return hit.videoId === null && hit.checked < staleBefore
   })
   if (needed.length === 0) return cache

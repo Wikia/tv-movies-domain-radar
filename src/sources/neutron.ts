@@ -1,4 +1,5 @@
 import { API_BASE, IMAGE_BASE, MAX_PAGE_SIZE, MCO_TYPE, USER_AGENT } from '../config.js'
+import { sleep } from '../pool.js'
 import type { MediaType, Title } from '../types.js'
 
 interface ApiItem {
@@ -37,10 +38,6 @@ async function getJson<T>(url: string): Promise<T> {
     }
   }
   throw lastError
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function imageUrl(image: ApiItem['image']): string | null {
