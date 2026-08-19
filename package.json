@@ -9,7 +9,7 @@
   },
   "scripts": {
     "scan": "node --env-file-if-exists=.env --import tsx src/index.ts",
-    "scan:publish": "node --env-file-if-exists=.env --import tsx src/index.ts --publish",
+    "scan:publish": "node --env-file-if-exists=.env --import tsx src/index.ts --publish --no-render",
     "trailer": "node --env-file-if-exists=.env --import tsx scripts/trailer.ts",
     "serve": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "dashboard": "npm run scan && npm run web:build && npm run serve",
