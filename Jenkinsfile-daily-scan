@@ -106,8 +106,7 @@ def notifyBuild(report) {
     def header = "*${result}*: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
 
     if (report == null) {
-        slackPost('#FF0000', "${header}
-The scan produced no report at all — it died before it could write one. <!here>")
+        slackPost('#FF0000', "${header}\nThe scan produced no report at all — it died before it could write one. <!here>")
         return
     }
 
@@ -153,8 +152,7 @@ The scan produced no report at all — it died before it could write one. <!here
     if (result == 'FAILURE') lines << '<!here>'
 
     def colour = result == 'FAILURE' ? '#FF0000' : result == 'UNSTABLE' ? '#F0AD4E' : '#7AF371'
-    slackPost(colour, lines.join('
-'))
+    slackPost(colour, lines.join('\n'))
 }
 
 def slackPost(String colour, String message) {
