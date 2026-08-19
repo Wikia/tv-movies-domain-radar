@@ -6,13 +6,9 @@ import type { Title } from '../types.js'
 
 const ENDPOINT = 'https://news.google.com/rss/search'
 
-// Single-word titles are still refused. Filtering on the headline rescues some
-// of them — "Animals" goes from 50 articles to 6 that are genuinely about the
-// Ben Affleck thriller — but it fails on common words: for "War" it keeps
-// "A Cold War Movie…", and for "Him" it keeps "…makes him the most residuals".
-// Both look exactly like a hit and neither is one, so the phrase has to carry
-// more than one word. The 8-letter floor is gone: headline filtering handles
-// short-but-distinctive phrases like "The Deb" that the old rule threw away.
+// Single-word titles are refused: headline filtering rescues "Animals" but not
+// "War" ("A Cold War Movie…") or "Him" ("…makes him the most residuals"), which
+// look exactly like hits. No letter floor — filtering handles "The Deb".
 function tooGeneric(title: string): boolean {
   const words = title.trim().split(/\s+/).filter(Boolean)
   return words.length < 2
@@ -74,16 +70,9 @@ interface DayCount {
   outlets: number
 }
 
-// Three numbers per day, because the raw count answers the wrong question.
-//
-//   articles  everything the query returned, kept for continuity and so the
-//             on-topic share stays inspectable
-//   onTopic   headlines that actually name the title — "Animals" returns 50
-//             articles of which 12 are about the film
-//   outlets   distinct publications among those. Resists syndication (twelve
-//             sites re-running one wire story is one story) and saturates far
-//             later than the 100-item ceiling: Avengers: Doomsday hits the cap
-//             at 100 articles while sitting at 55 outlets.
+// Three numbers, because a raw item count measures the query rather than the
+// title: "Animals" returns 50 articles of which 12 are about the film. `outlets`
+// resists syndication and saturates far later than the 100-item ceiling.
 async function countFor(title: Title, day: string): Promise<DayCount> {
   const response = await fetch(url(title, day), { headers: { 'User-Agent': USER_AGENT } })
   if (!response.ok) throw new Error(`news: HTTP ${response.status}`)

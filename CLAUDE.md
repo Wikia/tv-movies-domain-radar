@@ -3,7 +3,9 @@
 Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
 [`README.md`](README.md); this is the fast path.
 
-- **Entrypoint:** `src/index.ts` — run with `npm run scan`.
+- **Entrypoint:** `src/index.ts` — `npm run scan` locally, `npm run scan:publish`
+  in the daily Jenkins job (`Jenkinsfile-daily-scan`). Both are the same file;
+  `--publish` uploads and `--no-render` skips the 15 MB of HTML the cron discards.
 - **Stack:** TypeScript on Node 20. **Zero runtime dependencies** (built-in
   `fetch`, `node:crypto`); `tsx` + `typescript` are devDependencies only. The
   server is raw `node:http`. Keep it that way.
@@ -64,6 +66,14 @@ into one number — you have rebuilt the thing that was deleted.
 
 ### Snapshot storage (`src/remote.ts`, `src/publish.ts`)
 
+- **Writes need `X-Wikia-Internal-Request`.** Pandora blocks every route not
+  annotated `@PublicResource`; retrieval is public, uploading is not, so without
+  the header every write 403s. The filter checks presence, not value.
+- **Objects are write-once.** Re-POSTing an existing path returns a 500 — the
+  bucket or its service account refuses replacement, verified live. A second run
+  on the same date leaves the published copy alone and reports it as `ok`; a slot
+  holding *another* day's data reports `degraded` and needs a manual GCS delete.
+
 - **Six documents, one folder each**: `{news,youtube,tmdb}/{date}/readings.json`,
   `resolve/{date}/ids.json`, `trending/{week}/wikis.json`,
   `radar/{date}/radar.json`. A folder per source because scriptlr resolves
@@ -94,6 +104,17 @@ into one number — you have rebuilt the thing that was deleted.
   fills files that are MISSING locally; it never overwrites work in progress.
 - **Publishing is opt-in (`--publish`) and never happens on a pinned `--today`**,
   for the same reason that writes no snapshot.
+
+### The run report (`src/report.ts`)
+
+- **Every run writes `out/run.json`**, on the failure path too — a missing report
+  is indistinguishable from a cron that never fired. Jenkins reads it for the
+  build result and the Slack message, so the exit code alone is not the verdict.
+- **Four statuses, and they mean different things.** `failed` exits non-zero and
+  pings; `degraded` shipped but something is off and stays exit 0; `skipped` is
+  configuration, not a fault; `ok` is silent. Don't promote a standing condition
+  (no Fastly key, no YouTube key) to `degraded` — a daily alarm nobody can action
+  is one people learn to scroll past.
 
 ## Gotchas
 

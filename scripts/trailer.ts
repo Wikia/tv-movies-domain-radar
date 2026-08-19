@@ -1,9 +1,6 @@
 // Inspect and correct which YouTube video a title's signal is measured from.
-//
-// Search picks the trailer automatically and mostly gets it right, but "mostly"
-// is not good enough to present as evidence: an aggregator re-upload or the
-// wrong film's teaser produces a real-looking view curve for the wrong thing.
-// A pinned entry is never re-resolved by a later run.
+// Search mostly gets it right, and "mostly" is not good enough to present as
+// evidence. A pinned entry is never re-resolved.
 //
 //   npm run trailer                          list resolved titles
 //   npm run trailer -- --missing             list titles with no video

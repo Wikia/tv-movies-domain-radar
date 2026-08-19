@@ -1,12 +1,9 @@
-// What happened on a run, in a shape something else can act on.
-//
-// The pipeline degrades rather than fails — a bad day at YouTube must not cost
-// the calendar — but "degraded" and "fine" then look identical from outside, and
-// a cron that quietly stops recording is indistinguishable from a quiet week.
-// So every step records an outcome, and the run ends with a verdict.
+// What happened on a run, in a shape something else can act on. The pipeline
+// degrades rather than fails, so without this "degraded" and "fine" look
+// identical from outside.
 export type Status = 'ok' | 'degraded' | 'failed' | 'skipped'
 
-export interface Step {
+interface Step {
   name: string
   status: Status
   detail: string
@@ -27,8 +24,7 @@ export interface RunReport {
 export class Run {
   private readonly started = Date.now()
   private readonly startedAt = new Date().toISOString()
-  // Set as the run learns them, so a report can still be produced from the
-  // failure path — which is the case that most needs one.
+  // Set as the run learns them, so the failure path can still report.
   today = ''
   published = false
   readonly steps: Step[] = []
@@ -47,8 +43,8 @@ export class Run {
     this.counts[key] = value
   }
 
-  // A failed step is worth waking someone for; a degraded one is worth saying
-  // out loud but not worth an alarm. Anything skipped by configuration is fine.
+  // Failed wakes someone; degraded is worth saying but not an alarm; skipped is
+  // configuration, not a fault.
   get status(): Status {
     if (this.steps.some((s) => s.status === 'failed')) return 'failed'
     if (this.steps.some((s) => s.status === 'degraded') || this.warnings.length > 0) {
@@ -73,8 +69,7 @@ export class Run {
   }
 }
 
-// One line per step, plus the verdict. Whatever posts to Slack later can read
-// run.json instead and format it however it likes.
+// One line per step that isn't ok, plus the verdict.
 export function summarise(report: RunReport): string {
   const lines = [`[run] ${report.status} in ${report.seconds}s`]
   for (const step of report.steps) {

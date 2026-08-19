@@ -53,9 +53,8 @@ async function main(): Promise<void> {
 
   const pinned = Boolean(values.today) && values.today !== new Date().toISOString().slice(0, 10)
 
-  // Publishing is opt-in so a local run can never overwrite shared history, and
-  // a pinned --today never publishes for the same reason it writes no snapshot:
-  // today's numbers filed under a past date would corrupt the series for good.
+  // Opt-in, and never on a pinned --today: today's numbers filed under a past
+  // date would corrupt the series permanently.
   const publishing = Boolean(values.publish) && !pinned
   if (publishing && !remote.canWrite()) {
     throw new Error('--publish needs SCRIPTLR_WRITE_URL')
@@ -92,8 +91,8 @@ async function main(): Promise<void> {
     run.step('diff', 'ok', `vs ${previous.takenAt.slice(0, 10)}: ${added} new, ${moved} moved, ${gone} dropped`)
   } else {
     log('[diff] no previous snapshot — baseline established, no change alerts')
-    // Expected on a first run; on any later one it means yesterday is missing,
-    // which silently turns "what changed" into "nothing changed".
+    // On any run but the first this means yesterday is missing, which silently
+    // turns "what changed" into "nothing changed".
     run.step('diff', 'degraded', 'no previous snapshot — no change detection this run')
   }
 
@@ -108,7 +107,7 @@ async function main(): Promise<void> {
   }
   let trendingReport: TrendingReport | null = null
   if (wikis.length === 0) {
-    log(`[trend] no first-party export at data/fandom_trending.csv — running without ` + `the wiki signal (see README "First-party data sync")`)
+    log('[trend] no first-party export — running without the wiki signal')
     run.step('trending', 'degraded', 'no first-party export — running without the wiki signal')
   } else {
     trendingReport = trending.attach(titles, wikis)
@@ -157,11 +156,8 @@ async function main(): Promise<void> {
   run.count('alerts', fired.length)
   log(`[alert] ${fired.length} titles changed inside the alert window`)
 
-  // Thumbnails are written to local disk and referenced as /thumbs/{id}.jpg, so
-  // they only mean anything to a reader on the same machine. A publishing run on
-  // an ephemeral container would ship 197 paths to files nobody can fetch, so it
-  // skips the download entirely and leaves those titles without art — absent
-  // beats broken. Signed Fastly URLs work everywhere and are used when present.
+  // Thumbnails are local paths, meaningless to a remote reader, so a publishing
+  // run skips the download rather than shipping links nobody can fetch.
   const signedArt = Boolean(process.env.FASTLY_IMAGE_SECRET)
   const cachedPosters =
     publishing && !signedArt
@@ -171,12 +167,8 @@ async function main(): Promise<void> {
   const withArt = titles.filter((t) => t.poster).length
   run.count('posters', withArt)
   log(`[poster] ${withArt}/${titles.length} titles have display art ` + `(${signedArt ? 'signed resize URLs' : 'local thumbnail cache'})`)
-  // Without FASTLY_IMAGE_SECRET there are no shareable poster URLs, so a
-  // publishing run skips the local thumbnail cache — those paths mean nothing to
-  // a remote reader. That is a standing fact about the deployment, not something
-  // today's run did wrong, so it does not degrade the build. `title.image` is
-  // still published for any client willing to size the full-resolution original
-  // itself.
+  // Absent art is a fact about the deployment, not a fault of this run, so it
+  // does not degrade the build. Clients can still size title.image themselves.
   run.step('posters', 'ok', signedArt ? `${withArt}/${titles.length} with art` : 'no signed URLs; clients use title.image')
 
   const generatedAt = new Date().toISOString()
@@ -212,8 +204,8 @@ async function main(): Promise<void> {
   log(`[out] wrote ${titles.length} titles to out/radar.json`)
 
   if (publishing) {
-    // A failed publish is a real failure: the readings are on local disk, but
-    // nothing downstream will see today at all.
+    // A real failure: the readings are safe locally, but nothing downstream
+    // sees today at all.
     try {
       const result = await publish.publishRadar(output)
       await publish.publishCaches(output.today)
@@ -222,8 +214,6 @@ async function main(): Promise<void> {
         log(`[remote] published ${version} to ${SCRIPTLR.writeUrl}`)
         run.step('publish', 'ok', version)
       } else if (result === 'exists') {
-        // Write-once storage, so a second run today changes nothing. Not a
-        // failure: the day is already on record.
         log(`[remote] ${version} already published — nothing to write`)
         run.step('publish', 'ok', `${version} already published earlier today`)
       } else {
@@ -239,8 +229,7 @@ async function main(): Promise<void> {
     run.step('publish', 'skipped', pinned ? 'pinned --today' : 'no --publish')
   }
 
-  // 15 MB of HTML that nothing in the hosted flow reads — the app consumes
-  // radar.json. Kept for local runs, where it is how you look at the result.
+  // 15 MB of HTML nothing in the hosted flow reads; kept for local runs.
   if (values['no-render']) {
     run.step('render', 'skipped', '--no-render')
   } else {
@@ -255,9 +244,8 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-// One source's turn at recording a reading. Each of the three degrades on its
-// own — a bad day at YouTube must not cost the calendar — so a failure is
-// caught, recorded and stepped over rather than thrown.
+// Each source degrades on its own: a bad day at YouTube must not cost the
+// calendar, so failures are recorded and stepped over rather than thrown.
 async function record(
   name: string,
   work: () => Promise<{ status: Status; detail: string }>,
@@ -343,9 +331,8 @@ async function collectSignals(
   }
 }
 
-// The report is written whatever happens. A run that dies mid-way is precisely
-// the one something downstream needs to hear about, and a missing run.json is
-// indistinguishable from a cron that never fired.
+// Written whatever happens: a missing run.json is indistinguishable from a cron
+// that never fired, and a run that died is the one most worth reporting.
 async function finish(): Promise<void> {
   const report = run.finish()
   await mkdir(OUT_DIR, { recursive: true }).catch(() => undefined)
@@ -353,9 +340,8 @@ async function finish(): Promise<void> {
     undefined,
   )
   log(summarise(report))
-  // Non-zero only on a failed step, so a scheduler notices. `degraded` stays 0:
-  // the calendar shipped, and waking someone for a flat YouTube day trains them
-  // to ignore the alert.
+  // Non-zero only on a failed step. `degraded` stays 0: the calendar shipped, and
+  // waking someone for a flat YouTube day trains them to ignore the alert.
   if (report.status === 'failed') process.exitCode = 1
 }
 
