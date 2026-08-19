@@ -136,4 +136,3 @@ export function series(
 export function mature(store: SignalStore, metric: string): number {
   return Object.keys(store).filter((id) => series(store, Number(id), metric) !== null).length
 }
-

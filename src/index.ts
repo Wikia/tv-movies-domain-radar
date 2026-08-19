@@ -87,8 +87,14 @@ async function main(): Promise<void> {
     const added = changes.filter((c) => c.kind === 'new').length
     const moved = changes.filter((c) => c.kind === 'date-changed').length
     const gone = changes.filter((c) => c.kind === 'removed').length
-    log(`[diff] vs ${previous.takenAt.slice(0, 10)}: ${added} new, ${moved} date changes, ${gone} dropped off`)
-    run.step('diff', 'ok', `vs ${previous.takenAt.slice(0, 10)}: ${added} new, ${moved} moved, ${gone} dropped`)
+    log(
+      `[diff] vs ${previous.takenAt.slice(0, 10)}: ${added} new, ${moved} date changes, ${gone} dropped off`,
+    )
+    run.step(
+      'diff',
+      'ok',
+      `vs ${previous.takenAt.slice(0, 10)}: ${added} new, ${moved} moved, ${gone} dropped`,
+    )
   } else {
     log('[diff] no previous snapshot — baseline established, no change alerts')
     // On any run but the first this means yesterday is missing, which silently
@@ -111,10 +117,22 @@ async function main(): Promise<void> {
     run.step('trending', 'degraded', 'no first-party export — running without the wiki signal')
   } else {
     trendingReport = trending.attach(titles, wikis)
-    log(`[trend] week ${trendingReport.week}: ${trendingReport.wikis} trending TV/film wikis, ` + `${trendingReport.matched} tied to upcoming titles, ${trendingReport.unmappedTotal} unmapped`)
-    const weeksOld = Math.floor((today.getTime() - Date.parse(`${trendingReport.week}T00:00:00Z`)) / 604_800_000)
-    run.step('trending', weeksOld > 1 ? 'degraded' : 'ok', `week ${trendingReport.week}, ${trendingReport.matched} matched`)
-    if (weeksOld > 1) run.warn(`trending export is ${weeksOld} weeks old — a stale signal shown as this week's is worse than none`)
+    log(
+      `[trend] week ${trendingReport.week}: ${trendingReport.wikis} trending TV/film wikis, ` +
+        `${trendingReport.matched} tied to upcoming titles, ${trendingReport.unmappedTotal} unmapped`,
+    )
+    const weeksOld = Math.floor(
+      (today.getTime() - Date.parse(`${trendingReport.week}T00:00:00Z`)) / 604_800_000,
+    )
+    run.step(
+      'trending',
+      weeksOld > 1 ? 'degraded' : 'ok',
+      `week ${trendingReport.week}, ${trendingReport.matched} matched`,
+    )
+    if (weeksOld > 1)
+      run.warn(
+        `trending export is ${weeksOld} weeks old — a stale signal shown as this week's is worse than none`,
+      )
   }
 
   const articles = await wikipedia.resolveArticles(titles, today)
@@ -126,10 +144,17 @@ async function main(): Promise<void> {
   const scored = buzz.attach(titles, series)
   const spiking = titles.filter((t) => t.buzz?.spiking).length
   const buzzCoverage = { resolved: articles.size, scored, spiking }
-  log(`[buzz] ${articles.size}/${titles.length} titles resolved to a Wikipedia article, ` + `${scored} scored, ${spiking} spiking`)
+  log(
+    `[buzz] ${articles.size}/${titles.length} titles resolved to a Wikipedia article, ` +
+      `${scored} scored, ${spiking} spiking`,
+  )
   run.count('buzzScored', scored)
   run.count('spiking', spiking)
-  run.step('buzz', scored === 0 ? 'failed' : 'ok', `${articles.size} resolved, ${scored} scored, ${spiking} spiking`)
+  run.step(
+    'buzz',
+    scored === 0 ? 'failed' : 'ok',
+    `${articles.size} resolved, ${scored} scored, ${spiking} spiking`,
+  )
 
   await collectSignals(titles, today, pinned, publishing, run)
 
@@ -166,10 +191,17 @@ async function main(): Promise<void> {
   for (const title of titles) title.poster = posters.posterSrc(title, cachedPosters)
   const withArt = titles.filter((t) => t.poster).length
   run.count('posters', withArt)
-  log(`[poster] ${withArt}/${titles.length} titles have display art ` + `(${signedArt ? 'signed resize URLs' : 'local thumbnail cache'})`)
+  log(
+    `[poster] ${withArt}/${titles.length} titles have display art ` +
+      `(${signedArt ? 'signed resize URLs' : 'local thumbnail cache'})`,
+  )
   // Absent art is a fact about the deployment, not a fault of this run, so it
   // does not degrade the build. Clients can still size title.image themselves.
-  run.step('posters', 'ok', signedArt ? `${withArt}/${titles.length} with art` : 'no signed URLs; clients use title.image')
+  run.step(
+    'posters',
+    'ok',
+    signedArt ? `${withArt}/${titles.length} with art` : 'no signed URLs; clients use title.image',
+  )
 
   const generatedAt = new Date().toISOString()
   const inHorizon = titles.filter(
@@ -217,8 +249,14 @@ async function main(): Promise<void> {
         log(`[remote] ${version} already published — nothing to write`)
         run.step('publish', 'ok', `${version} already published earlier today`)
       } else {
-        log(`[remote] ${version} is occupied by another day's data — readings published, radar.json not`)
-        run.step('publish', 'degraded', `${version} holds another day's data; the dashboard will serve the previous day`)
+        log(
+          `[remote] ${version} is occupied by another day's data — readings published, radar.json not`,
+        )
+        run.step(
+          'publish',
+          'degraded',
+          `${version} holds another day's data; the dashboard will serve the previous day`,
+        )
         run.warn(`radar/${version} cannot be written — delete that object in GCS to clear it`)
       }
     } catch (error) {
@@ -237,7 +275,6 @@ async function main(): Promise<void> {
     run.step('render', 'ok', 'dashboard.html + dashboard.artifact.html')
     log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
   }
-
 }
 
 function message(error: unknown): string {
@@ -336,8 +373,8 @@ async function collectSignals(
 async function finish(): Promise<void> {
   const report = run.finish()
   await mkdir(OUT_DIR, { recursive: true }).catch(() => undefined)
-  await writeFile(path.join(OUT_DIR, 'run.json'), JSON.stringify(report, null, 2)).catch(() =>
-    undefined,
+  await writeFile(path.join(OUT_DIR, 'run.json'), JSON.stringify(report, null, 2)).catch(
+    () => undefined,
   )
   log(summarise(report))
   // Non-zero only on a failed step. `degraded` stays 0: the calendar shipped, and

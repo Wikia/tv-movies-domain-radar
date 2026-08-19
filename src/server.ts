@@ -124,9 +124,7 @@ async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<v
 
   const type = MIME[path.extname(filePath)] ?? 'application/octet-stream'
 
-  const cache = filePath.endsWith('index.html')
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable'
+  const cache = filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable'
 
   res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache })
   createReadStream(filePath).pipe(res)

@@ -30,6 +30,8 @@ export function ThemeToggle() {
       if (choice) localStorage.setItem(KEY, choice)
       else localStorage.removeItem(KEY)
     } catch {
+      // Private browsing and blocked storage: the toggle still works, it just
+      // will not be remembered.
     }
   }, [choice])
 

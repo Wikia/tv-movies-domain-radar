@@ -52,9 +52,7 @@ function scoreSource(
   for (const title of titles) {
     const stored = storedSeries(store, title.id, spec.metric)
     if (!stored) continue
-    const { dates, values } = spec.cumulative
-      ? toDailyRate(stored.dates, stored.values)
-      : stored
+    const { dates, values } = spec.cumulative ? toDailyRate(stored.dates, stored.values) : stored
     const raw = measure(values, spec.minBaseline)
     if (!raw) continue
     candidates.push({
@@ -75,8 +73,7 @@ function scoreSource(
     [...byBucket].map(([bucket, ratios]) => {
       const sorted = [...ratios].sort((a, b) => a - b)
       const mid = Math.floor(sorted.length / 2)
-      const median =
-        sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+      const median = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
       return [bucket, median || 1]
     }),
   )

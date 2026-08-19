@@ -41,8 +41,8 @@ export function TrendingPage({
           Trending now
         </h1>
         <p className="mt-1.5 text-[13px] text-ink-2">
-          {trending.length} titles moving · <b className="text-ink">{confirmed.length}</b>{' '}
-          confirmed by two or more independent sources.
+          {trending.length} titles moving · <b className="text-ink">{confirmed.length}</b> confirmed
+          by two or more independent sources.
         </p>
       </header>
 
@@ -72,8 +72,8 @@ export function TrendingPage({
                   {title.title}
                 </span>
                 <span className="figure text-[11px] text-ink-3">
-                  {title.type === 'movie' ? 'Film' : 'TV'} ·{' '}
-                  {formatDateYear(title.releaseDate)} · {formatCountdown(title.daysOut)}
+                  {title.type === 'movie' ? 'Film' : 'TV'} · {formatDateYear(title.releaseDate)} ·{' '}
+                  {formatCountdown(title.daysOut)}
                 </span>
               </span>
 
@@ -87,8 +87,8 @@ export function TrendingPage({
       <p className="mt-7 max-w-[74ch] text-[13px] leading-relaxed text-ink-3">
         A badge means that source has enough history to have an opinion and sees the title at least
         twice its own normal, still climbing. Dimmed badges were measured and stayed flat — worth
-        showing, because a disagreement is more informative than a quiet consensus. Sources with
-        too little history are absent rather than reported as flat.
+        showing, because a disagreement is more informative than a quiet consensus. Sources with too
+        little history are absent rather than reported as flat.
       </p>
     </div>
   )

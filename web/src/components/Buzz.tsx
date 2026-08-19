@@ -38,8 +38,8 @@ export function Buzz({
     >
       {!coverage || ranked.length === 0 ? (
         <Empty>
-          No attention data for this run. Titles are scored from Wikipedia pageviews; one that
-          isn't scored has no signal rather than a low one.
+          No attention data for this run. Titles are scored from Wikipedia pageviews; one that isn't
+          scored has no signal rather than a low one.
         </Empty>
       ) : (
         <>
@@ -76,8 +76,8 @@ export function Buzz({
           })}
           {}
           <p className="pt-2.5 text-[11px] text-ink-3">
-            Measured for {coverage.scored} of {total} titles — the rest have no Wikipedia article
-            or too little traffic to read.
+            Measured for {coverage.scored} of {total} titles — the rest have no Wikipedia article or
+            too little traffic to read.
           </p>
         </>
       )}

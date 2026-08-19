@@ -149,12 +149,7 @@ export function Schedule({
               </div>
 
               {group.map((title) => (
-                <Row
-                  key={title.id}
-                  title={title}
-                  reasons={reasons.get(title.id)}
-                  onOpen={onOpen}
-                />
+                <Row key={title.id} title={title} reasons={reasons.get(title.id)} onOpen={onOpen} />
               ))}
             </div>
           ))}

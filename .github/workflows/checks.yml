@@ -1,0 +1,42 @@
+name: Checks
+
+on:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: ['main']
+
+jobs:
+  checks:
+    name: Format, lint, typecheck & build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # `npm ci`, never `--omit=dev`: there are no runtime dependencies, but the
+      # pipeline is TypeScript run through tsx, which is a devDependency.
+      - name: Install
+        run: npm ci
+
+      - name: Install web dependencies
+        run: npm run web:install
+
+      - name: Format
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      # Covers src/ and scripts/. The React app has its own tsc -b, which runs
+      # as part of the build below — a broken component compiles clean here.
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build web
+        run: npm run web:build

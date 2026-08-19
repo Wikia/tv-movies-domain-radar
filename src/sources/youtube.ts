@@ -52,7 +52,7 @@ async function findTrailer(title: Title): Promise<SearchItem | null> {
     q: `${title.title} ${year} official trailer`,
     key: YOUTUBE_KEY,
   })
-  const data = (await getJson(`${API}/search?${params}`)) as { items?: SearchItem[] }
+  const data = (await getJson(`${API}/search?${params.toString()}`)) as { items?: SearchItem[] }
   const items = data.items ?? []
 
   const wanted = norm(title.title)
@@ -127,11 +127,7 @@ interface YouTubeResult {
   polled: number
 }
 
-export async function collect(
-  titles: Title[],
-  today: Date,
-  cache: Cache,
-): Promise<YouTubeResult> {
+export async function collect(titles: Title[], today: Date, cache: Cache): Promise<YouTubeResult> {
   const videos = new Map<string, number>()
   for (const title of titles) {
     const hit = cache[cacheKey(title)]
@@ -155,7 +151,7 @@ export async function collect(
       id: batch.join(','),
       key: YOUTUBE_KEY,
     })
-    const data = (await getJson(`${API}/videos?${params}`).catch(() => null)) as {
+    const data = (await getJson(`${API}/videos?${params.toString()}`).catch(() => null)) as {
       items?: StatsItem[]
     } | null
     if (!data?.items) continue
@@ -176,4 +172,3 @@ export async function collect(
 
   return { readings, resolved: videos.size, polled }
 }
-

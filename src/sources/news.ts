@@ -27,7 +27,7 @@ function url(title: Title, day: string): string {
     gl: 'US',
     ceid: 'US:en',
   })
-  return `${ENDPOINT}?${params}`
+  return `${ENDPOINT}?${params.toString()}`
 }
 
 function decode(value: string): string {
@@ -40,7 +40,10 @@ function decode(value: string): string {
 }
 
 function normalise(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
 interface Item {
@@ -108,7 +111,11 @@ interface NewsResult {
   failed: number
 }
 
-export async function collect(titles: Title[], today: Date, store: SignalStore): Promise<NewsResult> {
+export async function collect(
+  titles: Title[],
+  today: Date,
+  store: SignalStore,
+): Promise<NewsResult> {
   const searchable = titles.filter((title) => !tooGeneric(title.title))
   const skipped = titles.length - searchable.length
 
