@@ -4,12 +4,11 @@ import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promise
 import path from 'node:path'
 import { promisify } from 'node:util'
 
-import { ROOT, USER_AGENT } from './config.js'
+import { IMAGE_BASE, ROOT, USER_AGENT } from './config.js'
 import type { Title } from './types.js'
 
 const run = promisify(execFile)
 
-const IMAGE_HOST = 'https://www.metacritic.com/a/img'
 const CACHE_DIR = path.join(ROOT, 'data', 'posters')
 
 const SECRET = process.env.FASTLY_IMAGE_SECRET ?? ''
@@ -49,7 +48,7 @@ function signedPosterUrl(
 
   const toHash = `${src}?${query}`
   const hash = createHmac('sha1', SECRET).update(toHash).digest('hex')
-  return `${IMAGE_HOST}/resize/${hash}${toHash}`
+  return `${IMAGE_BASE}/resize/${hash}${toHash}`
 }
 
 async function exists(file: string): Promise<boolean> {

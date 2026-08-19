@@ -51,7 +51,9 @@ async function search(title: Title): Promise<number | null> {
   const params = new URLSearchParams({ query: title.title, include_adult: 'false' })
   if (year) params.set(kind === 'movie' ? 'primary_release_year' : 'first_air_date_year', year)
 
-  const data = (await getJson(`${API}/search/${kind}?${params}`)) as { results?: SearchHit[] }
+  const data = (await getJson(`${API}/search/${kind}?${params.toString()}`)) as {
+    results?: SearchHit[]
+  }
   const wanted = norm(title.title)
 
   for (const hit of (data.results ?? []).slice(0, 5)) {

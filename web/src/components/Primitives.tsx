@@ -73,13 +73,7 @@ const TAG_TONE = {
   band4: 'border-hot-4 text-hot-4 bg-hot-4/10',
 } as const
 
-export function Tag({
-  tone,
-  children,
-}: {
-  tone: keyof typeof TAG_TONE
-  children: ReactNode
-}) {
+export function Tag({ tone, children }: { tone: keyof typeof TAG_TONE; children: ReactNode }) {
   return (
     <span
       className={`rounded-full border px-1.5 py-0.5 text-[10px] whitespace-nowrap ${TAG_TONE[tone]}`}
@@ -129,8 +123,14 @@ export function SignalRow({
       title={title}
       {...(href ? { href, target: '_blank', rel: 'noreferrer' } : {})}
       {...(onClick && !href
-        ? { onClick, role: 'button', tabIndex: 0,
-            onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter') onClick() } }
+        ? {
+            onClick,
+            role: 'button',
+            tabIndex: 0,
+            onKeyDown: (e: KeyboardEvent) => {
+              if (e.key === 'Enter') onClick()
+            },
+          }
         : {})}
     >
       <div className="flex items-baseline gap-2">

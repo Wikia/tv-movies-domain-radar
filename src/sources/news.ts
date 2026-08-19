@@ -6,14 +6,10 @@ import type { Title } from '../types.js'
 
 const ENDPOINT = 'https://news.google.com/rss/search'
 
-// Single-word titles are still refused. Filtering on the headline rescues some
-// of them — "Animals" goes from 50 articles to 6 that are genuinely about the
-// Ben Affleck thriller — but it fails on common words: for "War" it keeps
-// "A Cold War Movie…", and for "Him" it keeps "…makes him the most residuals".
-// Both look exactly like a hit and neither is one, so the phrase has to carry
-// more than one word. The 8-letter floor is gone: headline filtering handles
-// short-but-distinctive phrases like "The Deb" that the old rule threw away.
-function tooGeneric(title: string): boolean {
+// Single-word titles are refused: headline filtering rescues "Animals" but not
+// "War" ("A Cold War Movie…") or "Him" ("…makes him the most residuals"), which
+// look exactly like hits. No letter floor — filtering handles "The Deb".
+export function tooGeneric(title: string): boolean {
   const words = title.trim().split(/\s+/).filter(Boolean)
   return words.length < 2
 }
@@ -31,7 +27,7 @@ function url(title: Title, day: string): string {
     gl: 'US',
     ceid: 'US:en',
   })
-  return `${ENDPOINT}?${params}`
+  return `${ENDPOINT}?${params.toString()}`
 }
 
 function decode(value: string): string {
@@ -44,16 +40,19 @@ function decode(value: string): string {
 }
 
 function normalise(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
 }
 
-interface Item {
+export interface Item {
   headline: string
   outlet: string
 }
 
 // Each <item> title arrives as "Headline - Outlet".
-function parseItems(xml: string): Item[] {
+export function parseItems(xml: string): Item[] {
   const items: Item[] = []
   for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
     const block = match[1]!
@@ -68,34 +67,29 @@ function parseItems(xml: string): Item[] {
   return items
 }
 
-interface DayCount {
+export interface DayCount {
   articles: number
   onTopic: number
   outlets: number
 }
 
-// Three numbers per day, because the raw count answers the wrong question.
-//
-//   articles  everything the query returned, kept for continuity and so the
-//             on-topic share stays inspectable
-//   onTopic   headlines that actually name the title — "Animals" returns 50
-//             articles of which 12 are about the film
-//   outlets   distinct publications among those. Resists syndication (twelve
-//             sites re-running one wire story is one story) and saturates far
-//             later than the 100-item ceiling: Avengers: Doomsday hits the cap
-//             at 100 articles while sitting at 55 outlets.
-async function countFor(title: Title, day: string): Promise<DayCount> {
-  const response = await fetch(url(title, day), { headers: { 'User-Agent': USER_AGENT } })
-  if (!response.ok) throw new Error(`news: HTTP ${response.status}`)
-  const items = parseItems(await response.text())
-
-  const wanted = normalise(title.title)
+// Three numbers, because a raw item count measures the query rather than the
+// title: "Animals" returns 50 articles of which 12 are about the film. `outlets`
+// resists syndication and saturates far later than the 100-item ceiling.
+export function countItems(items: Item[], titleName: string): DayCount {
+  const wanted = normalise(titleName)
   const onTopic = items.filter((item) => normalise(item.headline).includes(wanted))
   return {
     articles: items.length,
     onTopic: onTopic.length,
     outlets: new Set(onTopic.map((item) => item.outlet)).size,
   }
+}
+
+async function countFor(title: Title, day: string): Promise<DayCount> {
+  const response = await fetch(url(title, day), { headers: { 'User-Agent': USER_AGENT } })
+  if (!response.ok) throw new Error(`news: HTTP ${response.status}`)
+  return countItems(parseItems(await response.text()), title.title)
 }
 
 // A day counts as missing until it carries the metric we now score on, so days
@@ -119,7 +113,11 @@ interface NewsResult {
   failed: number
 }
 
-export async function collect(titles: Title[], today: Date, store: SignalStore): Promise<NewsResult> {
+export async function collect(
+  titles: Title[],
+  today: Date,
+  store: SignalStore,
+): Promise<NewsResult> {
   const searchable = titles.filter((title) => !tooGeneric(title.title))
   const skipped = titles.length - searchable.length
 

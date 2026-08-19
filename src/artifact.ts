@@ -332,12 +332,7 @@ function inSchedule(title: Title, horizonDays: number, alerted: Set<number>): bo
 /** The schedule is the page's single list of titles. Changed titles are tagged
  * in place and reachable through the Alerts filter — no separate section
  * duplicating the same rows. */
-function renderSchedule(
-  titles: Title[],
-  horizonDays: number,
-  art: Art,
-  alerts: Alert[],
-): string {
+function renderSchedule(titles: Title[], horizonDays: number, art: Art, alerts: Alert[]): string {
   const alerted = new Map(alerts.map((a) => [a.title.id, a]))
   const alertedIds = new Set(alerted.keys())
   const inWindow = titles.filter((t) => inSchedule(t, horizonDays, alertedIds))
@@ -755,11 +750,7 @@ function renderBody(data: RadarOutput, art: Art): string {
       <div class="tile"><b>${data.counts.inHorizon}</b><span>Next ${data.horizonDays} days</span></div>
       <div class="tile"><b>${data.counts.upcoming}</b><span>Upcoming</span></div>
       <div class="tile"><b>${data.counts.alerts}</b><span>Changed</span></div>
-      ${
-        data.buzz
-          ? `<div class="tile"><b>${data.buzz.spiking}</b><span>Spiking</span></div>`
-          : ''
-      }
+      ${data.buzz ? `<div class="tile"><b>${data.buzz.spiking}</b><span>Spiking</span></div>` : ''}
       ${
         data.trending
           ? `<div class="tile"><b>${data.trending.wikis}</b><span>Wikis trending</span></div>`
@@ -841,9 +832,7 @@ export async function build(data: RadarOutput, outDir = path.join(ROOT, 'out')):
   // page looks identical to "the pipeline found nothing".
   const rowCount = (body.match(new RegExp(`class="${ROW_CLASS}"`, 'g')) ?? []).length
   const alertedIds = new Set(data.alerts.map((a) => a.title.id))
-  const expected = data.titles.filter((t) =>
-    inSchedule(t, data.horizonDays, alertedIds),
-  ).length
+  const expected = data.titles.filter((t) => inSchedule(t, data.horizonDays, alertedIds)).length
   if (expected > 0 && rowCount === 0) {
     throw new Error(
       `artifact: rendered 0 .${ROW_CLASS} elements for ${expected} upcoming titles — ` +

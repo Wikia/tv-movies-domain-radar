@@ -62,13 +62,9 @@ export const SIGNALS = {
 export const YOUTUBE_KEY = process.env.YOUTUBE_API_KEY ?? ''
 export const TMDB_TOKEN = process.env.TMDB_ACCESS_TOKEN ?? ''
 
-// Snapshot storage (pandora/scriptlr). Unset = the pipeline stays entirely
-// local, exactly as before. Uploads exist only on the on-prem deployment;
-// the public GKE one is read-only, hence two URLs.
-// The scriptlr host is an internal k8s address, not a secret — it lives here so
-// nothing has to be configured to run the pipeline. One on-prem instance serves
-// both: reads are public, writes need the X-Wikia-Internal-Request header.
-// Publishing is still gated on --publish, so a default URL cannot cause one.
+// Snapshot storage (pandora/scriptlr). An internal k8s address, not a secret, so
+// it defaults here and nothing needs configuring. Publishing is gated on
+// --publish, so a default URL cannot cause one.
 const SCRIPTLR_BASE = 'http://a.sjc.k8s.wikia.net/scriptlr'
 
 export const SCRIPTLR = {

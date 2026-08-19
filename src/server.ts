@@ -5,8 +5,9 @@ import { readFile, stat } from 'node:fs/promises'
 import http from 'node:http'
 import path from 'node:path'
 
-import { API_BASE, ROOT } from './config.js'
+import { ROOT, SCRIPTLR } from './config.js'
 import { POSTER_CACHE_DIR } from './posters.js'
+import * as remote from './remote.js'
 
 const PORT = Number(process.env.PORT ?? 8787)
 const RADAR_JSON = path.join(ROOT, 'out', 'radar.json')
@@ -35,7 +36,38 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(payload)
 }
 
+// Published data first, local file second: a deployed instance has no
+// out/radar.json, and the browser cannot fetch scriptlr itself — no CORS
+// headers, no HTTPS — so this proxies.
+let cached: { at: number; body: string } | null = null
+const CACHE_MS = 60_000
+
+async function publishedRadar(): Promise<string | null> {
+  if (!remote.canRead()) return null
+  if (cached && Date.now() - cached.at < CACHE_MS) return cached.body
+  try {
+    const found = await remote.get<unknown>('radar', 'radar.json')
+    if (found.kind === 'absent') return null
+    const body = JSON.stringify(found.body)
+    cached = { at: Date.now(), body }
+    return body
+  } catch {
+    // Serve the last good copy rather than an error page if scriptlr blips.
+    return cached?.body ?? null
+  }
+}
+
 async function serveRadar(res: http.ServerResponse): Promise<void> {
+  const published = await publishedRadar()
+  if (published) {
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Content-Length': Buffer.byteLength(published),
+      'Cache-Control': 'public, max-age=60',
+    })
+    res.end(published)
+    return
+  }
   try {
     const body = await readFile(RADAR_JSON, 'utf8')
     res.writeHead(200, {
@@ -47,7 +79,7 @@ async function serveRadar(res: http.ServerResponse): Promise<void> {
   } catch {
     sendJson(res, 404, {
       error: 'No radar data yet.',
-      hint: 'Run `npm run scan` to generate out/radar.json.',
+      hint: 'Run `npm run scan`, or set SCRIPTLR_READ_URL to serve published data.',
     })
   }
 }
@@ -92,9 +124,7 @@ async function serveStatic(res: http.ServerResponse, urlPath: string): Promise<v
 
   const type = MIME[path.extname(filePath)] ?? 'application/octet-stream'
 
-  const cache = filePath.endsWith('index.html')
-    ? 'no-cache'
-    : 'public, max-age=31536000, immutable'
+  const cache = filePath.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable'
 
   res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache })
   createReadStream(filePath).pipe(res)
@@ -133,5 +163,6 @@ const server = http.createServer((req, res) => {
 })
 
 server.listen(PORT, () => {
-  process.stdout.write(`tv-movies radar -> http://localhost:${PORT} (upstream ${API_BASE})\n`)
+  const source = remote.canRead() ? SCRIPTLR.readUrl : 'out/radar.json (local scan)'
+  process.stdout.write(`tv-movies radar -> http://localhost:${PORT} · serving ${source}\n`)
 })

@@ -5,11 +5,8 @@ import { ROOT } from './config.js'
 import * as remote from './remote.js'
 import type { RadarOutput, TrendingWiki } from './types.js'
 
-// The id caches are the least obvious thing that has to survive a stateless run,
-// and the most expensive to lose. YouTube's search.list costs 100 quota units a
-// title against a 10,000/day budget, so re-resolving 234 titles would exceed the
-// day's quota outright; Wikipedia resolution converges upward across runs, so a
-// job that forgets it sits permanently at cold-run coverage.
+// Cron state, not a cache: re-resolving YouTube trailers costs 100 quota units a
+// title against a 10,000/day budget.
 const CACHES = {
   wikiArticles: path.join(ROOT, 'data', 'wiki-articles.json'),
   youtubeVideos: path.join(ROOT, 'data', 'youtube-videos.json'),
@@ -22,9 +19,7 @@ type Caches = Partial<Record<CacheName, unknown>>
 const CACHE_FOLDER = 'resolve'
 const CACHE_FILE = 'ids.json'
 
-// Only fills caches that are MISSING locally. A local file is at least as fresh
-// as the published one and the run is about to update it, so remote never
-// overwrites work in progress — it only seeds a fresh container.
+// Fills only caches MISSING locally, so remote never overwrites work in progress.
 export async function hydrateCaches(): Promise<number> {
   if (!remote.canRead()) return 0
   const missing: CacheName[] = []
@@ -75,9 +70,8 @@ interface PublishedTrending {
   wikis: TrendingWiki[]
 }
 
-// The export is weekly and pulled through the Google Drive MCP, which a headless
-// run has no access to. Publishing it means the daily job reads it over HTTP
-// instead — the one dependency that otherwise stops this running unattended.
+// The weekly export is pulled through the Google Drive MCP, which a headless run
+// cannot reach; publishing it lets the daily job read it over HTTP instead.
 export async function loadTrending(): Promise<TrendingWiki[]> {
   if (!remote.canRead()) return []
   const found = await remote.get<PublishedTrending>(TRENDING_FOLDER, TRENDING_FILE)
@@ -96,23 +90,20 @@ const RADAR_FILE = 'radar.json'
 
 /** written = published now · exists = already published today · blocked = the
  * slot holds another day's data and cannot be corrected. */
-export type PublishResult = 'written' | 'exists' | 'blocked'
+type PublishResult = 'written' | 'exists' | 'blocked'
 
 export async function publishRadar(output: RadarOutput): Promise<PublishResult> {
   if (!remote.canWrite()) return 'exists'
   const version = remote.versionFor(output.today)
 
-  // Objects are write-once here, so a version occupied by something else can
-  // never be corrected from this side. That is worth saying out loud, but not
-  // worth failing the run over: radar.json is derived and rebuildable, while the
-  // readings — which publish to their own unoccupied versions — are not. Losing
-  // a day of the served file is a stale dashboard; losing the readings would be
-  // permanent.
+  // Write-once storage: a slot holding another day's data can never be corrected.
+  // Reported rather than thrown — radar.json is rebuildable, the readings are not.
   const existing = await remote.get<RadarOutput>(RADAR_FOLDER, RADAR_FILE, version)
   if (existing.kind === 'found') {
     return existing.body.today === output.today ? 'exists' : 'blocked'
   }
-  return (await remote.put(RADAR_FOLDER, version, RADAR_FILE, output)) ? 'written' : 'exists'
+  await remote.post(RADAR_FOLDER, version, RADAR_FILE, output)
+  return 'written'
 }
 
 export async function fetchRadar(day: string): Promise<RadarOutput | null> {

@@ -12,10 +12,7 @@ interface CacheEntry {
 }
 type Cache = Record<string, CacheEntry>
 
-type Resolution =
-  | { status: 'found'; article: string }
-  | { status: 'absent' }
-  | { status: 'failed' }
+type Resolution = { status: 'found'; article: string } | { status: 'absent' } | { status: 'failed' }
 
 function cacheKey(title: Title): string {
   return `${title.title}|${title.type}|${title.releaseDate?.slice(0, 4) ?? '?'}`
@@ -100,15 +97,14 @@ async function keepScreenArticles(candidates: string[]): Promise<Map<string, boo
 
       for (const title of seen) if (!verdict.has(title)) verdict.set(title, false)
     } catch {
+      // A bad batch leaves its titles unverdicted rather than marking them false:
+      // only definite answers get cached.
     }
   }
   return verdict
 }
 
-export async function resolveArticles(
-  titles: Title[],
-  today: Date,
-): Promise<Map<number, string>> {
+export async function resolveArticles(titles: Title[], today: Date): Promise<Map<number, string>> {
   const raw = await readFile(CACHE_FILE, 'utf8').catch(() => '{}')
   let cache: Cache = {}
   try {
@@ -178,11 +174,7 @@ function stamp(date: Date): string {
   return date.toISOString().slice(0, 10).replace(/-/g, '')
 }
 
-export async function pageviews(
-  article: string,
-  today: Date,
-  days: number,
-): Promise<number[]> {
+export async function pageviews(article: string, today: Date, days: number): Promise<number[]> {
   const end = new Date(today.getTime() - 86_400_000)
   const start = new Date(end.getTime() - (days - 1) * 86_400_000)
 
@@ -191,9 +183,9 @@ export async function pageviews(
     `https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/en.wikipedia` +
     `/all-access/user/${slug}/daily/${stamp(start)}/${stamp(end)}`
 
-  const data = (await getJson(url).catch(() => null)) as
-    | { items?: { timestamp: string; views: number }[] }
-    | null
+  const data = (await getJson(url).catch(() => null)) as {
+    items?: { timestamp: string; views: number }[]
+  } | null
   if (!data?.items?.length) return []
 
   const byDay = new Map(data.items.map((i) => [i.timestamp.slice(0, 8), i.views]))

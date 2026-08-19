@@ -8,14 +8,14 @@ import type { Change, Title } from './types.js'
 const SNAPSHOT_DIR = path.join(ROOT, 'data', 'snapshots')
 const LATEST = path.join(SNAPSHOT_DIR, 'latest.json')
 
-interface SnapshotEntry {
+export interface SnapshotEntry {
   id: number
   type: Title['type']
   title: string
   releaseDate: string | null
 }
 
-interface Snapshot {
+export interface Snapshot {
   takenAt: string
   entries: SnapshotEntry[]
 }

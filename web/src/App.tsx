@@ -130,7 +130,11 @@ export default function App() {
           />
           {}
           {data.buzz && (
-            <Tile label="Trending" value={data.buzz.spiking} onClick={() => navigate('/trending')} />
+            <Tile
+              label="Trending"
+              value={data.buzz.spiking}
+              onClick={() => navigate('/trending')}
+            />
           )}
           {data.trending && <Tile label="Wikis trending" value={data.trending.wikis} />}
           <ThemeToggle />
@@ -173,27 +177,26 @@ export default function App() {
         </p>
         <p className="mt-2.5">
           <b className="text-ink">Buzz</b> scores the <i>size of the surge</i> in Wikipedia
-          pageviews — daily views beyond what a title the same
-          distance from release would be getting anyway — so a big name sitting at its normal level
-          scores nothing. The scale is anchored on a real event:{' '}
+          pageviews — daily views beyond what a title the same distance from release would be
+          getting anyway — so a big name sitting at its normal level scores nothing. The scale is
+          anchored on a real event:{' '}
           <b className="text-ink">100 = The Odyssey's peak of 1.2M views/day</b>. For calibration,
           Superman (2025) would score 93, Avatar: Fire and Ash 90, Wicked: For Good 82. An ordinary
-          trailer drop lands in the 40s–60s, so a week with nothing in red is the scale working,
-          not a fault. The ramp runs <span className="text-hot-4">quiet</span> →{' '}
+          trailer drop lands in the 40s–60s, so a week with nothing in red is the scale working, not
+          a fault. The ramp runs <span className="text-hot-4">quiet</span> →{' '}
           <span className="text-hot-3">notable</span> → <span className="text-hot-2">strong</span> →{' '}
           <span className="text-hot-1">exceptional</span>, and the score is always shown beside the
-          colour. <b className="text-ink">Rising</b> means at least twice normal <i>and still
-          climbing week over week</i>; <b className="text-ink">fading</b> means still elevated, but
-          the event has passed.
+          colour. <b className="text-ink">Rising</b> means at least twice normal{' '}
+          <i>and still climbing week over week</i>; <b className="text-ink">fading</b> means still
+          elevated, but the event has passed.
         </p>
         <p className="mt-2.5">
           <b className="text-ink">Trending on Fandom</b> is our own weekly wiki traffic
           {data.trending?.week ? ` (week of ${data.trending.week})` : ''}. A{' '}
           <b className="text-ink">wiki hot</b> tag means the title's own wiki is trending;{' '}
           <b className="text-ink">franchise hot</b> means its franchise hub is — which says the
-          franchise is drawing an audience, not this title. The side panel lists trending wikis
-          with <i>no</i> upcoming release behind them, which is where a back-catalogue surge shows
-          up.
+          franchise is drawing an audience, not this title. The side panel lists trending wikis with{' '}
+          <i>no</i> upcoming release behind them, which is where a back-catalogue surge shows up.
         </p>
         <p className="mt-2.5">
           The <b className="text-ink">Buzz</b> column replaced the Metascore: almost nothing has a

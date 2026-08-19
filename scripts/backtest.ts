@@ -39,15 +39,16 @@ async function fetchSeries(article: string, end: Date): Promise<Record<string, n
       for (const item of data.items ?? []) out[item.timestamp.slice(0, 8)] = item.views
       return out
     } catch {
+      // A title that cannot be fetched is simply absent from the replay.
     }
   }
   return {}
 }
 
 async function main(): Promise<void> {
-  const radar = JSON.parse(
-    readFileSync(path.join(ROOT, 'out', 'radar.json'), 'utf8'),
-  ) as { titles: Title[] }
+  const radar = JSON.parse(readFileSync(path.join(ROOT, 'out', 'radar.json'), 'utf8')) as {
+    titles: Title[]
+  }
   const articles = JSON.parse(
     readFileSync(path.join(ROOT, 'data', 'wiki-articles.json'), 'utf8'),
   ) as Record<string, { article: string | null }>

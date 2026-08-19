@@ -1,9 +1,6 @@
 // Inspect and correct which YouTube video a title's signal is measured from.
-//
-// Search picks the trailer automatically and mostly gets it right, but "mostly"
-// is not good enough to present as evidence: an aggregator re-upload or the
-// wrong film's teaser produces a real-looking view curve for the wrong thing.
-// A pinned entry is never re-resolved by a later run.
+// Search mostly gets it right, and "mostly" is not good enough to present as
+// evidence. A pinned entry is never re-resolved.
 //
 //   npm run trailer                          list resolved titles
 //   npm run trailer -- --missing             list titles with no video
@@ -51,12 +48,16 @@ function videoIdFrom(input: string): string | null {
 function findTitle(titles: Title[], query: string): Title {
   const wanted = query.toLowerCase()
   const exact = titles.filter((t) => t.title.toLowerCase() === wanted)
-  const matches = exact.length > 0 ? exact : titles.filter((t) => t.title.toLowerCase().includes(wanted))
+  const matches =
+    exact.length > 0 ? exact : titles.filter((t) => t.title.toLowerCase().includes(wanted))
   if (matches.length === 0) throw new Error(`no title matching "${query}"`)
   if (matches.length > 1) {
     throw new Error(
       `"${query}" matches ${matches.length} titles:\n` +
-        matches.slice(0, 10).map((t) => `  ${t.title} (${t.releaseDate ?? '?'})`).join('\n'),
+        matches
+          .slice(0, 10)
+          .map((t) => `  ${t.title} (${t.releaseDate ?? '?'})`)
+          .join('\n'),
     )
   }
   return matches[0]!
@@ -65,14 +66,14 @@ function findTitle(titles: Title[], query: string): Title {
 async function describe(videoId: string): Promise<string> {
   if (!YOUTUBE_KEY) return ''
   const params = new URLSearchParams({ part: 'snippet', id: videoId, key: YOUTUBE_KEY })
-  const data = (await fetch(`https://www.googleapis.com/youtube/v3/videos?${params}`)
+  const data = (await fetch(`https://www.googleapis.com/youtube/v3/videos?${params.toString()}`)
     .then((r) => r.json())
     .catch(() => null)) as { items?: { snippet: { title: string; channelTitle: string } }[] } | null
   const item = data?.items?.[0]
   return item ? `${item.snippet.title} — ${item.snippet.channelTitle}` : ''
 }
 
-async function list(titles: Title[], cache: Cache, onlyMissing: boolean): Promise<void> {
+function list(titles: Title[], cache: Cache, onlyMissing: boolean): void {
   let shown = 0
   for (const title of titles) {
     const hit = cache[cacheKey(title)]
@@ -96,7 +97,10 @@ async function main(): Promise<void> {
 
   if (command === 'set' || command === 'clear') {
     const [query, value] = rest
-    if (!query) throw new Error(`usage: npm run trailer -- ${command} "<title>"${command === 'set' ? ' <url|id>' : ''}`)
+    if (!query)
+      throw new Error(
+        `usage: npm run trailer -- ${command} "<title>"${command === 'set' ? ' <url|id>' : ''}`,
+      )
     const titles = await loadTitles()
     const cache = await loadCache()
     const title = findTitle(titles, query)
@@ -135,7 +139,7 @@ async function main(): Promise<void> {
   }
 
   const onlyMissing = process.argv.includes('--missing')
-  await list(await loadTitles(), await loadCache(), onlyMissing)
+  list(await loadTitles(), await loadCache(), onlyMissing)
 }
 
 main().catch((error: unknown) => {

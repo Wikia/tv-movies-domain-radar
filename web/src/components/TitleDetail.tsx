@@ -38,22 +38,18 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
             {title.buzz && <Tag tone="muted">buzz {title.buzz.points}</Tag>}
             <SourceBadges attention={attention} showQuiet={false} />
             {title.trend && (
-              <Tag tone="muted">
-                {title.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}
-              </Tag>
+              <Tag tone="muted">{title.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</Tag>
             )}
           </div>
         </div>
       </header>
 
-      <h2 className="section-label mb-3 border-b border-line pb-2 text-ink">
-        Where it's trending
-      </h2>
+      <h2 className="section-label mb-3 border-b border-line pb-2 text-ink">Where it's trending</h2>
 
       {!attention ? (
         <p className="py-4 text-sm text-ink-3">
-          Nothing could be measured for this title — no source had enough history. That's an
-          absence of evidence, not evidence it's cold.
+          Nothing could be measured for this title — no source had enough history. That's an absence
+          of evidence, not evidence it's cold.
         </p>
       ) : (
         <>
@@ -64,19 +60,17 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
           </div>
           <p className="mt-5 max-w-[70ch] text-[13px] leading-relaxed text-ink-3">
             Each source is measured against <i>its own</i> recent normal, then against what titles
-            the same distance from release are doing — so the ramp every title gets as it
-            approaches release is already divided out.{' '}
-            <b className="text-ink-2">Rising</b> means at least twice normal and still climbing
-            week over week. A source is only listed once it has enough history to have an opinion.
+            the same distance from release are doing — so the ramp every title gets as it approaches
+            release is already divided out. <b className="text-ink-2">Rising</b> means at least
+            twice normal and still climbing week over week. A source is only listed once it has
+            enough history to have an opinion.
           </p>
         </>
       )}
 
       {title.trend && (
         <>
-          <h2 className="section-label mt-10 mb-3 border-b border-line pb-2 text-ink">
-            On Fandom
-          </h2>
+          <h2 className="section-label mt-10 mb-3 border-b border-line pb-2 text-ink">On Fandom</h2>
           <p className="text-[13px] leading-relaxed text-ink-2">
             {title.trend.match === 'exact' ? (
               <>
@@ -102,8 +96,8 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
                 >
                   {title.trend.domain}
                 </a>{' '}
-                is trending — which says the franchise is drawing an audience, not necessarily
-                this title.
+                is trending — which says the franchise is drawing an audience, not necessarily this
+                title.
               </>
             )}{' '}
             <span className="figure">
@@ -114,7 +108,6 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
           </p>
         </>
       )}
-
     </div>
   )
 }
@@ -133,8 +126,7 @@ const METRIC_LABEL: Record<string, string> = {
 }
 
 function SourceRow({ signal }: { signal: SourceSignal }) {
-  const tone =
-    signal.phase === 'rising' ? 'hot' : signal.phase === 'fading' ? 'muted' : 'muted'
+  const tone = signal.phase === 'rising' ? 'hot' : signal.phase === 'fading' ? 'muted' : 'muted'
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-3">
       <span className="w-28 shrink-0 text-sm font-[550]">{SOURCE_LABEL[signal.source]}</span>
@@ -147,7 +139,10 @@ function SourceRow({ signal }: { signal: SourceSignal }) {
         <b className={signal.phase === 'rising' ? 'text-hot-2' : 'text-ink-3'}>
           {signal.relative}×
         </b>
-        <span className="text-ink-3"> vs similar · {signal.momentum}× wk · {signal.days}d</span>
+        <span className="text-ink-3">
+          {' '}
+          vs similar · {signal.momentum}× wk · {signal.days}d
+        </span>
       </span>
     </div>
   )

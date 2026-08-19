@@ -92,8 +92,7 @@ export async function load(file = TRENDING_CSV): Promise<TrendingWiki[]> {
     const week = get(record, 'trending_week').trim()
     const firstWeek = get(record, 'first_trending_week_8w').trim()
 
-    const velocity =
-      prior > 0 ? Math.round(Math.max(0, trendingScore - prior) * 1e4) / 1e4 : 0
+    const velocity = prior > 0 ? Math.round(Math.max(0, trendingScore - prior) * 1e4) / 1e4 : 0
     const isNew = week !== '' && week === firstWeek
 
     const installment = get(record, 'installment_title_labels').trim().replace(/_/g, ' ')
@@ -102,7 +101,8 @@ export async function load(file = TRENDING_CSV): Promise<TrendingWiki[]> {
     const slug = domain.replace('.fandom.com', '')
     const sameThing = (a: string, b: string): boolean =>
       a.toLowerCase().replace(/[^a-z0-9]/g, '') === b.toLowerCase().replace(/[^a-z0-9]/g, '')
-    const name = franchise && sameThing(franchise, slug) ? franchise : fromDomain(domain) || franchise
+    const name =
+      franchise && sameThing(franchise, slug) ? franchise : fromDomain(domain) || franchise
 
     wikis.push({
       domain,
