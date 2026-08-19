@@ -1,0 +1,167 @@
+// Daily release-radar scan.
+//
+// Fetches the calendar, records one reading per signal source, scores them and
+// publishes the result to scriptlr. The dashboard reads what this job writes, so
+// if this stops running the site quietly serves yesterday's answer for ever.
+//
+// The job is idempotent: re-running on the same day overwrites that date's
+// version rather than creating a second one, and the day-over-day diff is
+// anchored to the previous date, so a re-run still reports "what changed since
+// yesterday" rather than "nothing changed".
+
+pipeline {
+    agent { label 'linux' }
+
+    triggers {
+        // 'H' spreads start times across the hour to avoid load spikes; the
+        // exact minute is stable per job. 05:00 UTC leaves Wikipedia's ~4-day
+        // pageview lag and the US news cycle behind us before we read them.
+        cron('H 5 * * *')
+    }
+
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '60'))
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        // Read is the public multi-region deployment; write is on-prem, which is
+        // the only one whose upload routes exist. This agent must reach on-prem.
+        SCRIPTLR_READ_URL  = credentials('tv-movies-radar-scriptlr-read-url')
+        SCRIPTLR_WRITE_URL = credentials('tv-movies-radar-scriptlr-write-url')
+        YOUTUBE_API_KEY    = credentials('tv-movies-radar-youtube-key')
+        TMDB_ACCESS_TOKEN  = credentials('tv-movies-radar-tmdb-token')
+        // Without this, published titles carry no poster art at all: the local
+        // thumbnail cache is written to the workspace and means nothing to a
+        // reader anywhere else, so a publishing run skips it deliberately.
+        FASTLY_IMAGE_SECRET = credentials('tv-movies-radar-fastly-image-secret')
+    }
+
+    stages {
+        stage('Install') {
+            steps {
+                nodejs('v22 LATEST') {
+                    // NOT --omit=dev. There are no runtime dependencies, but the
+                    // pipeline is TypeScript executed through tsx, which is a
+                    // devDependency — omitting them leaves nothing to run.
+                    sh 'npm ci'
+                }
+            }
+        }
+
+        stage('Scan and publish') {
+            steps {
+                nodejs('v22 LATEST') {
+                    sh 'npm run scan:publish'
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // The pipeline degrades rather than dying: a bad day at YouTube
+                // costs that reading, not the calendar. So the exit code alone
+                // under-reports, and run.json carries the real verdict.
+                def report = fileExists('out/run.json') ? readJSON(file: 'out/run.json') : null
+
+                if (report == null) {
+                    currentBuild.result = 'FAILURE'
+                    currentBuild.description = 'no run.json — the scan died before it could report'
+                } else {
+                    def problems = report.steps.findAll { it.status != 'ok' && it.status != 'skipped' }
+                    def summary = problems.collect { "${it.name}: ${it.detail}" } + report.warnings
+
+                    if (report.status == 'failed') {
+                        currentBuild.result = 'FAILURE'
+                    } else if (report.status == 'degraded') {
+                        // Shipped, but something is off. UNSTABLE rather than
+                        // FAILURE: waking someone for a flat YouTube day trains
+                        // them to ignore the alert.
+                        currentBuild.result = 'UNSTABLE'
+                    }
+
+                    currentBuild.description = [
+                        "${report.counts.titles ?: '?'} titles",
+                        "${report.counts.rising ?: 0} rising",
+                        "${report.counts.confirmed ?: 0} confirmed",
+                        summary ? "· ${summary.join('; ')}" : '',
+                    ].join(' ').trim()
+                }
+
+                archiveArtifacts artifacts: 'out/run.json,out/radar.json', allowEmptyArchive: true
+                notifyBuild(report)
+            }
+        }
+    }
+}
+
+// Every run posts. Silence is ambiguous — "no message" reads the same whether
+// the scan was healthy or the job never fired — and while this is pointed at a
+// test channel, confirmation that it ran is the whole point.
+def notifyBuild(report) {
+    def result = currentBuild.currentResult
+    def header = "*${result}*: <${env.BUILD_URL}|${env.JOB_NAME} #${env.BUILD_NUMBER}>"
+
+    if (report == null) {
+        slackPost('#FF0000', "${header}
+The scan produced no report at all — it died before it could write one. <!here>")
+        return
+    }
+
+    // Step name -> the service a human would name. Anything not listed is
+    // internal plumbing (diff, posters, render, publish) and reported separately.
+    def apis = [
+        calendar : 'neutron-api (release calendar)',
+        buzz     : 'Wikipedia pageviews',
+        news     : 'Google News',
+        youtube  : 'YouTube Data API',
+        tmdb     : 'TMDB',
+        trending : 'Fandom trending export',
+    ]
+
+    def lines = [header]
+    def healthy = []
+
+    report.steps.each { step ->
+        def label = apis[step.name]
+        if (label == null) {
+            // Not an API, but a failed publish means nothing downstream sees today.
+            if (step.status == 'failed') lines << ":x: *${step.name}* failed — ${step.detail}"
+            else if (step.status == 'degraded') lines << ":warning: ${step.name} — ${step.detail}"
+            return
+        }
+        if (step.status == 'failed') {
+            lines << ":x: *${label}* pulled no data — ${step.detail}"
+        } else if (step.status == 'degraded') {
+            lines << ":warning: *${label}* — ${step.detail}"
+        } else if (step.status == 'skipped') {
+            lines << ":heavy_minus_sign: *${label}* skipped — ${step.detail}"
+        } else {
+            healthy << label
+        }
+    }
+
+    report.warnings.each { lines << ":warning: ${it}" }
+
+    def counts = report.counts
+    lines << "${counts.titles ?: 0} titles · ${counts.rising ?: 0} rising · " +
+             "${counts.confirmed ?: 0} confirmed" + (report.published ? " · published ${report.today}" : '')
+    if (healthy) lines << ":white_check_mark: ${healthy.join(', ')}"
+    if (result == 'FAILURE') lines << '<!here>'
+
+    def colour = result == 'FAILURE' ? '#FF0000' : result == 'UNSTABLE' ? '#F0AD4E' : '#7AF371'
+    slackPost(colour, lines.join('
+'))
+}
+
+def slackPost(String colour, String message) {
+    try {
+        slackSend(channel: '#radar-test', color: colour, failOnError: true, message: message)
+    } catch (Exception error) {
+        // A notification problem must not fail a scan that worked.
+        echo "Slack notification failed: ${error.message}"
+    }
+}
