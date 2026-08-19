@@ -65,10 +65,16 @@ export const TMDB_TOKEN = process.env.TMDB_ACCESS_TOKEN ?? ''
 // Snapshot storage (pandora/scriptlr). Unset = the pipeline stays entirely
 // local, exactly as before. Uploads exist only on the on-prem deployment;
 // the public GKE one is read-only, hence two URLs.
+// The scriptlr host is an internal k8s address, not a secret — it lives here so
+// nothing has to be configured to run the pipeline. One on-prem instance serves
+// both: reads are public, writes need the X-Wikia-Internal-Request header.
+// Publishing is still gated on --publish, so a default URL cannot cause one.
+const SCRIPTLR_BASE = 'http://a.sjc.k8s.wikia.net/scriptlr'
+
 export const SCRIPTLR = {
   appId: process.env.SCRIPTLR_APP_ID ?? 'tv-movies-radar',
-  readUrl: process.env.SCRIPTLR_READ_URL ?? '',
-  writeUrl: process.env.SCRIPTLR_WRITE_URL ?? '',
+  readUrl: process.env.SCRIPTLR_READ_URL ?? SCRIPTLR_BASE,
+  writeUrl: process.env.SCRIPTLR_WRITE_URL ?? SCRIPTLR_BASE,
   token: process.env.SCRIPTLR_TOKEN ?? '',
   retries: 3,
   // Refuse to publish a store that lost more than this share of its titles

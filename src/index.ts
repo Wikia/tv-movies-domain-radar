@@ -214,10 +214,18 @@ async function main(): Promise<void> {
     // A failed publish is a real failure: the readings are on local disk, but
     // nothing downstream will see today at all.
     try {
-      await publish.publishRadar(output)
+      const wrote = await publish.publishRadar(output)
       await publish.publishCaches(output.today)
-      log(`[remote] published ${remote.versionFor(output.today)} to ${SCRIPTLR.writeUrl}`)
-      run.step('publish', 'ok', `${remote.versionFor(output.today)}`)
+      const version = remote.versionFor(output.today)
+      if (wrote) {
+        log(`[remote] published ${version} to ${SCRIPTLR.writeUrl}`)
+        run.step('publish', 'ok', version)
+      } else {
+        // Snapshots are write-once, so a second run today changes nothing. Not a
+        // failure: the day is already on record.
+        log(`[remote] ${version} already published — nothing to write`)
+        run.step('publish', 'ok', `${version} (already published earlier today)`)
+      }
     } catch (error) {
       run.step('publish', 'failed', message(error))
       log(`[remote] publish FAILED: ${message(error)}`)

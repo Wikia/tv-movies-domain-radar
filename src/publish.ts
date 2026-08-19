@@ -94,9 +94,24 @@ export async function publishTrending(wikis: TrendingWiki[]): Promise<void> {
 const RADAR_FOLDER = 'radar'
 const RADAR_FILE = 'radar.json'
 
-export async function publishRadar(output: RadarOutput): Promise<void> {
-  if (!remote.canWrite()) return
-  await remote.put(RADAR_FOLDER, remote.versionFor(output.today), RADAR_FILE, output)
+export async function publishRadar(output: RadarOutput): Promise<boolean> {
+  if (!remote.canWrite()) return false
+  const version = remote.versionFor(output.today)
+
+  // Objects are write-once here, so a version already occupied by something
+  // else can never be corrected — and it would be served as that day's answer
+  // for ever. Skipping silently would hide that, so check whose data it is.
+  const existing = await remote.get<RadarOutput>(RADAR_FOLDER, RADAR_FILE, version)
+  if (existing.kind === 'found') {
+    if (existing.body.today !== output.today) {
+      throw new Error(
+        `${RADAR_FOLDER}/${version} already holds data for ${existing.body.today}, ` +
+          `not ${output.today} — the slot is taken and cannot be overwritten`,
+      )
+    }
+    return false
+  }
+  return remote.put(RADAR_FOLDER, version, RADAR_FILE, output)
 }
 
 export async function fetchRadar(day: string): Promise<RadarOutput | null> {

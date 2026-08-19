@@ -20,12 +20,13 @@ pipeline {
     }
 
     parameters {
-        // Publishing needs the scriptlr URLs, which don't exist yet. Off by
-        // default so the pipeline can be validated end to end before then.
+        // Default TRUE because the scheduled build uses defaults: with this off,
+        // the cron would scan every morning and upload nothing, which looks
+        // healthy from the outside. Untick it for a dry run.
         booleanParam(
             name: 'PUBLISH',
-            defaultValue: false,
-            description: 'Upload snapshots to scriptlr. Needs the scriptlr credentials.'
+            defaultValue: true,
+            description: 'Upload snapshots to scriptlr. Untick for a dry run that scans but publishes nothing.'
         )
     }
 
@@ -50,34 +51,14 @@ pipeline {
         stage('Scan') {
             when { expression { !params.PUBLISH } }
             steps {
-                // No scriptlr credentials needed: everything runs, nothing uploads.
-                withCredentials([
-                    string(credentialsId: 'tv-movies-radar-youtube-key', variable: 'YOUTUBE_API_KEY'),
-                    string(credentialsId: 'tv-movies-radar-tmdb-token', variable: 'TMDB_ACCESS_TOKEN'),
-                ]) {
-                    nodejs('v22 LATEST') {
-                        sh 'npm run scan'
-                    }
-                }
+                runRadar('npm run scan')
             }
         }
 
         stage('Scan and publish') {
             when { expression { params.PUBLISH } }
             steps {
-                withCredentials([
-                    string(credentialsId: 'tv-movies-radar-scriptlr-read-url', variable: 'SCRIPTLR_READ_URL'),
-                    string(credentialsId: 'tv-movies-radar-scriptlr-write-url', variable: 'SCRIPTLR_WRITE_URL'),
-                    string(credentialsId: 'tv-movies-radar-youtube-key', variable: 'YOUTUBE_API_KEY'),
-                    string(credentialsId: 'tv-movies-radar-tmdb-token', variable: 'TMDB_ACCESS_TOKEN'),
-                    // Add once it exists; without it published titles carry no
-                    // poster art, which the run report flags as degraded:
-                    // string(credentialsId: 'tv-movies-radar-fastly-image-secret', variable: 'FASTLY_IMAGE_SECRET'),
-                ]) {
-                    nodejs('v22 LATEST') {
-                        sh 'npm run scan:publish'
-                    }
-                }
+                runRadar('npm run scan:publish')
             }
         }
     }
@@ -128,6 +109,40 @@ pipeline {
                 }
                 notifyBuild(report)
             }
+        }
+    }
+}
+
+// The API keys arrive as one uploaded .env rather than a credential per key:
+// the pipeline already reads .env via --env-file-if-exists, so adding a source
+// later needs no Jenkins change. The file is written into the workspace and
+// removed straight after — the workspace is reused between builds, so leaving a
+// file of keys in it would outlive the run that needed it.
+//
+// The scriptlr URL is not here: it is an internal hostname with a default in
+// config.ts, not a secret.
+def runRadar(String command) {
+    // The credential is optional on purpose. Four of the six sources need no
+    // keys — the calendar, Wikipedia, Google News and the Fandom export are all
+    // keyless — so a missing .env costs the YouTube and TMDB readings and
+    // nothing else. The run reports them as skipped, which is accurate: they are
+    // unconfigured, not broken.
+    def wroteEnv = false
+    try {
+        withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
+            sh 'cp "$ENV_FILE" .env && chmod 600 .env'
+        }
+        wroteEnv = true
+    } catch (Exception missing) {
+        echo 'No tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+    }
+    try {
+        nodejs('v22 LATEST') {
+            sh command
+        }
+    } finally {
+        if (wroteEnv) {
+            sh 'rm -f .env'
         }
     }
 }
