@@ -16,7 +16,10 @@ const SOURCES: {
   { source: 'tmdb', store: 'tmdb', metric: 'popularity', cumulative: false, minBaseline: 1 },
 ]
 
-function toDailyRate(dates: string[], values: number[]): { dates: string[]; values: number[] } {
+export function toDailyRate(
+  dates: string[],
+  values: number[],
+): { dates: string[]; values: number[] } {
   const outDates: string[] = []
   const outValues: number[] = []
   for (let i = 1; i < values.length; i++) {

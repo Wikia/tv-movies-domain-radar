@@ -9,7 +9,7 @@ const ENDPOINT = 'https://news.google.com/rss/search'
 // Single-word titles are refused: headline filtering rescues "Animals" but not
 // "War" ("A Cold War Movie…") or "Him" ("…makes him the most residuals"), which
 // look exactly like hits. No letter floor — filtering handles "The Deb".
-function tooGeneric(title: string): boolean {
+export function tooGeneric(title: string): boolean {
   const words = title.trim().split(/\s+/).filter(Boolean)
   return words.length < 2
 }
@@ -46,13 +46,13 @@ function normalise(value: string): string {
     .trim()
 }
 
-interface Item {
+export interface Item {
   headline: string
   outlet: string
 }
 
 // Each <item> title arrives as "Headline - Outlet".
-function parseItems(xml: string): Item[] {
+export function parseItems(xml: string): Item[] {
   const items: Item[] = []
   for (const match of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
     const block = match[1]!
@@ -67,7 +67,7 @@ function parseItems(xml: string): Item[] {
   return items
 }
 
-interface DayCount {
+export interface DayCount {
   articles: number
   onTopic: number
   outlets: number
@@ -76,18 +76,20 @@ interface DayCount {
 // Three numbers, because a raw item count measures the query rather than the
 // title: "Animals" returns 50 articles of which 12 are about the film. `outlets`
 // resists syndication and saturates far later than the 100-item ceiling.
-async function countFor(title: Title, day: string): Promise<DayCount> {
-  const response = await fetch(url(title, day), { headers: { 'User-Agent': USER_AGENT } })
-  if (!response.ok) throw new Error(`news: HTTP ${response.status}`)
-  const items = parseItems(await response.text())
-
-  const wanted = normalise(title.title)
+export function countItems(items: Item[], titleName: string): DayCount {
+  const wanted = normalise(titleName)
   const onTopic = items.filter((item) => normalise(item.headline).includes(wanted))
   return {
     articles: items.length,
     onTopic: onTopic.length,
     outlets: new Set(onTopic.map((item) => item.outlet)).size,
   }
+}
+
+async function countFor(title: Title, day: string): Promise<DayCount> {
+  const response = await fetch(url(title, day), { headers: { 'User-Agent': USER_AGENT } })
+  if (!response.ok) throw new Error(`news: HTTP ${response.status}`)
+  return countItems(parseItems(await response.text()), title.title)
 }
 
 // A day counts as missing until it carries the metric we now score on, so days

@@ -8,7 +8,7 @@ on:
 
 jobs:
   checks:
-    name: Format, lint, typecheck & build
+    name: Format, lint, typecheck, test & build
     runs-on: ubuntu-latest
 
     steps:
@@ -37,6 +37,9 @@ jobs:
       # as part of the build below — a broken component compiles clean here.
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Test
+        run: npm test
 
       - name: Build web
         run: npm run web:build

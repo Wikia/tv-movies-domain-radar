@@ -15,10 +15,11 @@
     "dashboard": "npm run scan && npm run web:build && npm run serve",
     "backtest": "node --env-file-if-exists=.env --import tsx scripts/backtest.ts",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/*.test.ts src/sources/*.test.ts",
     "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.ts\" \"web/src/**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.ts\" \"web/src/**/*.{ts,tsx}\"",
     "lint": "eslint .",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run web:build",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run web:build",
     "web:install": "npm --prefix web install",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build"

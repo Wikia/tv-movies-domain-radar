@@ -17,7 +17,9 @@ Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
 - **Signals:** two, both attached rather than blended — `title.trend` (our own
   wiki traffic) and `title.buzz` (Wikipedia pageviews vs the title's own normal).
 - **Flags:** `--horizon N`, `--today YYYY-MM-DD`, `--publish`.
-- **Check:** `npm run typecheck`, `npm run web:build`, `npm run backtest`.
+- **Check:** `npm run check` (format, lint, typecheck, test, web build) — the
+  same four CI runs. `npm run backtest` separately before touching buzz scoring;
+  it hits Wikipedia live and cannot run in CI.
 - **`npm run typecheck` covers `src/` and `scripts/`, NOT `web/`.** The React app is typechecked by
   its own `tsc -b`, which runs as part of `npm run web:build`. So a broken
   component compiles clean at the root and the build fails instead — and if you

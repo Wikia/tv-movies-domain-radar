@@ -29,4 +29,9 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-call': 'off',
     },
   },
+  {
+    // node:test's describe/it return promises nobody is meant to await.
+    files: ['**/*.test.ts'],
+    rules: { '@typescript-eslint/no-floating-promises': 'off' },
+  },
 )
