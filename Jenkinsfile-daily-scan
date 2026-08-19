@@ -19,23 +19,20 @@ pipeline {
         cron('H 5 * * *')
     }
 
+    parameters {
+        // Publishing needs the scriptlr URLs, which don't exist yet. Off by
+        // default so the pipeline can be validated end to end before then.
+        booleanParam(
+            name: 'PUBLISH',
+            defaultValue: false,
+            description: 'Upload snapshots to scriptlr. Needs the scriptlr credentials.'
+        )
+    }
+
     options {
         timeout(time: 45, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '60'))
         disableConcurrentBuilds()
-    }
-
-    environment {
-        // Read is the public multi-region deployment; write is on-prem, which is
-        // the only one whose upload routes exist. This agent must reach on-prem.
-        SCRIPTLR_READ_URL  = credentials('tv-movies-radar-scriptlr-read-url')
-        SCRIPTLR_WRITE_URL = credentials('tv-movies-radar-scriptlr-write-url')
-        YOUTUBE_API_KEY    = credentials('tv-movies-radar-youtube-key')
-        TMDB_ACCESS_TOKEN  = credentials('tv-movies-radar-tmdb-token')
-        // Without this, published titles carry no poster art at all: the local
-        // thumbnail cache is written to the workspace and means nothing to a
-        // reader anywhere else, so a publishing run skips it deliberately.
-        FASTLY_IMAGE_SECRET = credentials('tv-movies-radar-fastly-image-secret')
     }
 
     stages {
@@ -50,10 +47,36 @@ pipeline {
             }
         }
 
-        stage('Scan and publish') {
+        stage('Scan') {
+            when { expression { !params.PUBLISH } }
             steps {
-                nodejs('v22 LATEST') {
-                    sh 'npm run scan:publish'
+                // No scriptlr credentials needed: everything runs, nothing uploads.
+                withCredentials([
+                    string(credentialsId: 'tv-movies-radar-youtube-key', variable: 'YOUTUBE_API_KEY'),
+                    string(credentialsId: 'tv-movies-radar-tmdb-token', variable: 'TMDB_ACCESS_TOKEN'),
+                ]) {
+                    nodejs('v22 LATEST') {
+                        sh 'npm run scan'
+                    }
+                }
+            }
+        }
+
+        stage('Scan and publish') {
+            when { expression { params.PUBLISH } }
+            steps {
+                withCredentials([
+                    string(credentialsId: 'tv-movies-radar-scriptlr-read-url', variable: 'SCRIPTLR_READ_URL'),
+                    string(credentialsId: 'tv-movies-radar-scriptlr-write-url', variable: 'SCRIPTLR_WRITE_URL'),
+                    string(credentialsId: 'tv-movies-radar-youtube-key', variable: 'YOUTUBE_API_KEY'),
+                    string(credentialsId: 'tv-movies-radar-tmdb-token', variable: 'TMDB_ACCESS_TOKEN'),
+                    // Add once it exists; without it published titles carry no
+                    // poster art, which the run report flags as degraded:
+                    // string(credentialsId: 'tv-movies-radar-fastly-image-secret', variable: 'FASTLY_IMAGE_SECRET'),
+                ]) {
+                    nodejs('v22 LATEST') {
+                        sh 'npm run scan:publish'
+                    }
                 }
             }
         }
@@ -65,7 +88,14 @@ pipeline {
                 // The pipeline degrades rather than dying: a bad day at YouTube
                 // costs that reading, not the calendar. So the exit code alone
                 // under-reports, and run.json carries the real verdict.
-                def report = fileExists('out/run.json') ? readJSON(file: 'out/run.json') : null
+                def report = null
+                try {
+                    if (fileExists('out/run.json')) report = readJSON(file: 'out/run.json')
+                } catch (Exception noWorkspace) {
+                    // The build died before the agent was ready, so there is no
+                    // workspace to read. Nothing to report but the failure itself.
+                    echo "No workspace to read run.json from: ${noWorkspace.message}"
+                }
 
                 if (report == null) {
                     currentBuild.result = 'FAILURE'
@@ -91,7 +121,11 @@ pipeline {
                     ].join(' ').trim()
                 }
 
-                archiveArtifacts artifacts: 'out/run.json,out/radar.json', allowEmptyArchive: true
+                try {
+                    archiveArtifacts artifacts: 'out/run.json,out/radar.json', allowEmptyArchive: true
+                } catch (Exception noWorkspace) {
+                    echo "Nothing to archive: ${noWorkspace.message}"
+                }
                 notifyBuild(report)
             }
         }

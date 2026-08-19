@@ -22,8 +22,15 @@ function url(base: string, folder: string, version: string, filename: string): s
   return `${base.replace(/\/$/, '')}/${SCRIPTLR.appId}/${folder}/${version}/${filename}`
 }
 
+// Pandora is secure-by-default: every route is blocked unless it carries this
+// header, except the handful annotated @PublicResource. The retrieve endpoint is
+// public; registering an app and uploading are not, so without it every write
+// 403s. The filter only checks the header is present, not its value.
 function headers(): Record<string, string> {
-  return SCRIPTLR.token ? { Authorization: `Bearer ${SCRIPTLR.token}` } : {}
+  return {
+    'X-Wikia-Internal-Request': '1',
+    ...(SCRIPTLR.token ? { Authorization: `Bearer ${SCRIPTLR.token}` } : {}),
+  }
 }
 
 export async function get<T>(
