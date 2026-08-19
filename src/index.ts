@@ -171,12 +171,13 @@ async function main(): Promise<void> {
   const withArt = titles.filter((t) => t.poster).length
   run.count('posters', withArt)
   log(`[poster] ${withArt}/${titles.length} titles have display art ` + `(${signedArt ? 'signed resize URLs' : 'local thumbnail cache'})`)
-  if (publishing && !signedArt) {
-    run.warn('FASTLY_IMAGE_SECRET is unset, so published titles carry no poster — local thumbnails cannot be read by anything else')
-    run.step('posters', 'degraded', 'no signed URLs; skipped the local thumbnail cache')
-  } else {
-    run.step('posters', 'ok', `${withArt}/${titles.length} with art`)
-  }
+  // Without FASTLY_IMAGE_SECRET there are no shareable poster URLs, so a
+  // publishing run skips the local thumbnail cache — those paths mean nothing to
+  // a remote reader. That is a standing fact about the deployment, not something
+  // today's run did wrong, so it does not degrade the build. `title.image` is
+  // still published for any client willing to size the full-resolution original
+  // itself.
+  run.step('posters', 'ok', signedArt ? `${withArt}/${titles.length} with art` : 'no signed URLs; clients use title.image')
 
   const generatedAt = new Date().toISOString()
   const inHorizon = titles.filter(
@@ -214,17 +215,21 @@ async function main(): Promise<void> {
     // A failed publish is a real failure: the readings are on local disk, but
     // nothing downstream will see today at all.
     try {
-      const wrote = await publish.publishRadar(output)
+      const result = await publish.publishRadar(output)
       await publish.publishCaches(output.today)
       const version = remote.versionFor(output.today)
-      if (wrote) {
+      if (result === 'written') {
         log(`[remote] published ${version} to ${SCRIPTLR.writeUrl}`)
         run.step('publish', 'ok', version)
-      } else {
-        // Snapshots are write-once, so a second run today changes nothing. Not a
+      } else if (result === 'exists') {
+        // Write-once storage, so a second run today changes nothing. Not a
         // failure: the day is already on record.
         log(`[remote] ${version} already published — nothing to write`)
-        run.step('publish', 'ok', `${version} (already published earlier today)`)
+        run.step('publish', 'ok', `${version} already published earlier today`)
+      } else {
+        log(`[remote] ${version} is occupied by another day's data — readings published, radar.json not`)
+        run.step('publish', 'degraded', `${version} holds another day's data; the dashboard will serve the previous day`)
+        run.warn(`radar/${version} cannot be written — delete that object in GCS to clear it`)
       }
     } catch (error) {
       run.step('publish', 'failed', message(error))

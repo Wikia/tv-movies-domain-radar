@@ -118,7 +118,40 @@ pipeline {
 // Wikipedia, Google News and the Fandom export are keyless — so with neither
 // available the run loses the YouTube and TMDB readings and nothing else.
 def loadSecrets() {
+    // The token reaches jobs two different ways on this master: as a global env
+    // var (how the functional-tests jobs use it) or as the credential
+    // `default-vault-sjc-token`. Try the env var, then bind the credential —
+    // guessing wrong means silently skipping Vault, which looks like a missing
+    // secret rather than a misconfigured job.
     if (env.VAULT_TOKEN_SJC) {
+        if (readVault()) {
+            return true
+        }
+    } else {
+        try {
+            withCredentials([string(credentialsId: 'default-vault-sjc-token', variable: 'VAULT_TOKEN_SJC')]) {
+                if (readVault()) {
+                    return true
+                }
+            }
+        } catch (Exception noToken) {
+            echo "No Vault token available (${noToken.message})."
+        }
+    }
+
+    try {
+        withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
+            sh 'cp "$ENV_FILE" .env && chmod 600 .env'
+        }
+        echo 'Secrets loaded from the tv-movies-radar-env credential.'
+        return true
+    } catch (Exception missing) {
+        echo 'No Vault secret and no tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+        return false
+    }
+}
+
+def readVault() {
         try {
             // Masked so the token cannot reach the console, the same wrapper the
             // functional-tests jobs use. `set +x` keeps it out of the trace too.
@@ -151,21 +184,10 @@ chmod 600 .env
 ''')
                 }
             }
-            echo 'Secrets loaded from Vault.'
-            return true
-        } catch (Exception vaultFailed) {
-            echo "Vault read failed (${vaultFailed.message}) — falling back to the credential."
-        }
-    }
-
-    try {
-        withCredentials([file(credentialsId: 'tv-movies-radar-env', variable: 'ENV_FILE')]) {
-            sh 'cp "$ENV_FILE" .env && chmod 600 .env'
-        }
-        echo 'Secrets loaded from the tv-movies-radar-env credential.'
+        echo 'Secrets loaded from Vault.'
         return true
-    } catch (Exception missing) {
-        echo 'No Vault secret and no tv-movies-radar-env credential — YouTube and TMDB will be skipped.'
+    } catch (Exception vaultFailed) {
+        echo "Vault read failed (${vaultFailed.message}) — falling back to the credential."
         return false
     }
 }
