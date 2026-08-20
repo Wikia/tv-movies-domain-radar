@@ -21,15 +21,15 @@ export function Poster({
   textClass?: string
 }) {
   const [failed, setFailed] = useState(false)
-  const show = title.poster && !failed
+  const src = title.poster ?? title.image
 
   return (
     <div
       className={`relative aspect-[2/3] shrink-0 overflow-hidden border border-line bg-raise ${className}`}
     >
-      {show ? (
+      {src && !failed ? (
         <img
-          src={title.poster ?? ''}
+          src={src}
           alt=""
           loading="lazy"
           decoding="async"

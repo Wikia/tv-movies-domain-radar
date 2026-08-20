@@ -285,7 +285,7 @@ def notifyBuild(report) {
 
 def slackPost(String colour, String message) {
     try {
-        slackSend(channel: '#radar-test', color: colour, failOnError: true, message: message)
+        slackSend(channel: '#domain-tv-movies-radar-alerts', color: colour, failOnError: true, message: message)
     } catch (Exception error) {
         // A notification problem must not fail a scan that worked.
         echo "Slack notification failed: ${error.message}"
