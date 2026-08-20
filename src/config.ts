@@ -20,11 +20,13 @@ export const BUZZ = {
   recentDays: 3,
   baselineDays: 28,
   // The baseline grows with the series: a source reports once it has this many
-  // days and widens to baselineDays as history accrues. Measured on 120 days of
-  // real pageviews — a 7-day baseline sustains 72% of its fires against a 13%
-  // control (5.3x lift) vs 80%/19% (4.3x) at 28 days. Shorter is less precise,
-  // not broken, and waiting a month for any signal at all is worse.
-  minBaselineDays: 7,
+  // days and widens to baselineDays as history accrues. With recentDays that
+  // puts the floor at 7 recorded days. Measured over 120 days of real pageviews,
+  // precision by baseline length: 4d 68%, 7d 72%, 14d 74%, 28d 80%, against a
+  // 13-19% control — so lift holds near 5x throughout and the cost of a short
+  // baseline is precision, not validity. Don't drop below 4: at three points a
+  // source cannot tell a spike from its own arrival.
+  minBaselineDays: 4,
   minBaselineViews: 50,
   spikeRatio: 2,
   anchorExcess: 1_200_000,
