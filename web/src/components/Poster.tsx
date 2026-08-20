@@ -21,7 +21,11 @@ export function Poster({
   textClass?: string
 }) {
   const [failed, setFailed] = useState(false)
-  const show = title.poster && !failed
+  // `poster` is a signed, resized URL and only exists when FASTLY_IMAGE_SECRET
+  // is set. Without it, fall back to the catalog original — full resolution, so
+  // it relies on lazy loading and the rendered size to stay affordable.
+  const src = title.poster ?? title.image
+  const show = src && !failed
 
   return (
     <div
@@ -29,7 +33,7 @@ export function Poster({
     >
       {show ? (
         <img
-          src={title.poster ?? ''}
+          src={src}
           alt=""
           loading="lazy"
           decoding="async"
