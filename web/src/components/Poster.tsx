@@ -20,18 +20,14 @@ export function Poster({
   className?: string
   textClass?: string
 }) {
-  const [failed, setFailed] = useState(false)
-  // `poster` is a signed, resized URL and only exists when FASTLY_IMAGE_SECRET
-  // is set. Without it, fall back to the catalog original — full resolution, so
-  // it relies on lazy loading and the rendered size to stay affordable.
-  const src = title.poster ?? title.image
-  const show = src && !failed
+  const [failed, setFailed] = useState(false);
+  const src = title.poster ?? title.image;
 
   return (
     <div
       className={`relative aspect-[2/3] shrink-0 overflow-hidden border border-line bg-raise ${className}`}
     >
-      {show ? (
+      {src && !failed ? (
         <img
           src={src}
           alt=""
