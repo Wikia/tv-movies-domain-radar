@@ -35,6 +35,3 @@ data/backtest-series.json
 data/signals/
 data/youtube-videos.json
 data/tmdb-ids.json
-
-# Editor
-.idea/
