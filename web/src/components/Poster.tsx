@@ -20,8 +20,8 @@ export function Poster({
   className?: string
   textClass?: string
 }) {
-  const [failed, setFailed] = useState(false);
-  const src = title.poster ?? title.image;
+  const [failed, setFailed] = useState(false)
+  const src = title.poster ?? title.image
 
   return (
     <div
