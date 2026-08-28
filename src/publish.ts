@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { ROOT } from './config.js'
+import { ROOT, SCRIPTLR } from './config.js'
 import * as remote from './remote.js'
 import type { RadarOutput, TrendingWiki } from './types.js'
 
@@ -109,4 +109,18 @@ export async function publishRadar(output: RadarOutput): Promise<PublishResult> 
 export async function fetchRadar(day: string): Promise<RadarOutput | null> {
   const found = await remote.get<RadarOutput>(RADAR_FOLDER, RADAR_FILE, remote.versionFor(day))
   return found.kind === 'absent' ? null : found.body
+}
+
+// The most recent PREVIOUS day's full radar, walked back like the diff baseline.
+// Carries buzz, so the trending alert can fire on the transition into trending
+// rather than every day a title stays there. Null when nothing is published yet
+// or storage isn't configured (local runs), in which case every spike reads new.
+export async function previousRadar(today: Date): Promise<RadarOutput | null> {
+  if (!remote.canRead()) return null
+  for (let back = 1; back <= SCRIPTLR.baselineLookbackDays; back++) {
+    const day = new Date(today.getTime() - back * 86_400_000).toISOString().slice(0, 10)
+    const previous = await fetchRadar(day)
+    if (previous) return previous
+  }
+  return null
 }

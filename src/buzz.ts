@@ -126,3 +126,44 @@ type ScoredTitle = Title & { buzz: Buzz }
 function isScored(title: Title): title is ScoredTitle {
   return title.buzz != null
 }
+
+const BAND_RANK: Record<Buzz['band'], number> = { quiet: 0, notable: 1, strong: 2, exceptional: 3 }
+
+export interface TrendingHighlight {
+  id: number
+  title: string
+  points: number
+  band: Buzz['band']
+  rising: number
+}
+
+/** Titles worth naming in the daily alert — spiking at or above `threshold` —
+ * but only on the TRANSITION in: a fresh onset, or a climb to a higher band
+ * since `previous`. A title that jumped high and is holding keeps reading as
+ * `spiking` for ~2 weeks while its baseline catches up, so alerting on the level
+ * would re-fire every day; this fires once. Biggest first. */
+export function trendingHighlights(
+  current: Title[],
+  previous: Title[],
+  threshold: number,
+): TrendingHighlight[] {
+  const trending = (t: Title): boolean => Boolean(t.buzz?.spiking && t.buzz.points >= threshold)
+
+  const wasTrending = new Map<number, Buzz['band']>()
+  for (const t of previous) if (trending(t)) wasTrending.set(t.id, t.buzz!.band)
+
+  return current
+    .filter(trending)
+    .filter((t) => {
+      const before = wasTrending.get(t.id)
+      return before === undefined || BAND_RANK[t.buzz!.band] > BAND_RANK[before]
+    })
+    .sort((a, b) => b.buzz!.points - a.buzz!.points)
+    .map((t) => ({
+      id: t.id,
+      title: t.title,
+      points: t.buzz!.points,
+      band: t.buzz!.band,
+      rising: t.attention?.rising.length ?? 0,
+    }))
+}

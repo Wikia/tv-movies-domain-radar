@@ -178,17 +178,11 @@ async function main(): Promise<void> {
   for (const [source, n] of Object.entries(attention.bySource)) run.count(`source.${source}`, n)
 
   // Named Slack lines for titles spiking hard enough to be worth interrupting
-  // someone. Only the still-rising ones above the alert threshold, biggest
-  // first — most days this is empty and the section is dropped entirely.
-  for (const title of titles
-    .filter((t) => t.buzz?.spiking && t.buzz.points >= BUZZ.trendingAlert)
-    .sort((a, b) => (b.buzz?.points ?? 0) - (a.buzz?.points ?? 0))) {
-    run.highlight({
-      title: title.title,
-      points: title.buzz!.points,
-      band: title.buzz!.band,
-      rising: title.attention?.rising.length ?? 0,
-    })
+  // someone, fired only on the transition into trending — see trendingHighlights.
+  // Yesterday's published radar carries buzz, so we compare against it.
+  const before = await publish.previousRadar(today)
+  for (const h of buzz.trendingHighlights(titles, before?.titles ?? [], BUZZ.trendingAlert)) {
+    run.highlight({ title: h.title, points: h.points, band: h.band, rising: h.rising })
   }
 
   const fired = alerts.build(titles, changes)

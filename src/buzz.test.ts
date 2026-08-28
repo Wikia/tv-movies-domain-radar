@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { attach, bucketOf, measure, median, ranked } from './buzz.js'
+import { attach, bucketOf, measure, median, ranked, trendingHighlights } from './buzz.js'
 import { BUZZ } from './config.js'
 import type { Title } from './types.js'
 
@@ -176,6 +176,76 @@ describe('ranked', () => {
     assert.deepEqual(
       points,
       [...points].sort((a, b) => b - a),
+    )
+  })
+})
+
+describe('trendingHighlights', () => {
+  function scored(id: number, points: number, band: string, spiking: boolean, rising = 1): Title {
+    const t = title(id)
+    t.buzz = {
+      points,
+      band: band as NonNullable<Title['buzz']>['band'],
+      excess: 0,
+      recent: 0,
+      baseline: 0,
+      ratio: 0,
+      relative: 0,
+      momentum: 0,
+      cohort: '<=30',
+      phase: spiking ? 'rising' : 'flat',
+      spiking,
+    }
+    t.attention = {
+      sources: [],
+      rising: Array<'wikipedia'>(rising).fill('wikipedia'),
+      confirmed: rising >= 2,
+    }
+    return t
+  }
+
+  it('fires on a fresh onset above the threshold', () => {
+    const today = [scored(1, 72, 'strong', true)]
+    const out = trendingHighlights(today, [], 60)
+    assert.equal(out.length, 1)
+    assert.equal(out[0]?.title, 'Title 1')
+  })
+
+  it('stays silent for a title still spiking at the same band as yesterday', () => {
+    const yesterday = [scored(1, 72, 'strong', true)]
+    const today = [scored(1, 74, 'strong', true)] // held, even nudged up within the band
+    assert.deepEqual(trendingHighlights(today, yesterday, 60), [])
+  })
+
+  it('re-fires when a title climbs to a higher band', () => {
+    const yesterday = [scored(1, 72, 'strong', true)]
+    const today = [scored(1, 90, 'exceptional', true)]
+    const out = trendingHighlights(today, yesterday, 60)
+    assert.equal(out.length, 1)
+    assert.equal(out[0]?.band, 'exceptional')
+  })
+
+  it('ignores a title below the threshold even while spiking', () => {
+    assert.deepEqual(trendingHighlights([scored(1, 55, 'notable', true)], [], 60), [])
+  })
+
+  it('ignores an elevated-but-not-rising title', () => {
+    assert.deepEqual(trendingHighlights([scored(1, 80, 'strong', false)], [], 60), [])
+  })
+
+  it('re-fires an onset after the title dropped out and came back', () => {
+    // yesterday it was below the bar, so today's crossing is a new onset.
+    const yesterday = [scored(1, 50, 'notable', true)]
+    const today = [scored(1, 66, 'strong', true)]
+    assert.equal(trendingHighlights(today, yesterday, 60).length, 1)
+  })
+
+  it('orders by points, biggest first', () => {
+    const today = [scored(1, 63, 'strong', true), scored(2, 88, 'exceptional', true)]
+    const out = trendingHighlights(today, [], 60)
+    assert.deepEqual(
+      out.map((h) => h.points),
+      [88, 63],
     )
   })
 })
