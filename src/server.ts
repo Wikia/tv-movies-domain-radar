@@ -63,7 +63,7 @@ async function serveReady(res: http.ServerResponse): Promise<void> {
     sendJson(res, 200, { ok: true, source: 'published' })
     return
   }
-  const local = await readFile(RADAR_JSON, 'utf8').then(
+  const local = await stat(RADAR_JSON).then(
     () => true,
     () => false,
   )
