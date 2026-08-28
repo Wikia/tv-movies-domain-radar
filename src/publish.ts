@@ -119,8 +119,18 @@ export async function previousRadar(today: Date): Promise<RadarOutput | null> {
   if (!remote.canRead()) return null
   for (let back = 1; back <= SCRIPTLR.baselineLookbackDays; back++) {
     const day = new Date(today.getTime() - back * 86_400_000).toISOString().slice(0, 10)
-    const previous = await fetchRadar(day)
-    if (previous) return previous
+    try {
+      const previous = await fetchRadar(day)
+      if (previous) return previous
+    } catch (error) {
+      // This only powers the trending Slack line, so a read failure must not
+      // fail the scan or block today's publish (unlike the diff baseline, which
+      // is load-bearing and does abort). Giving up means today's spikes read as
+      // fresh onsets — a one-off, self-healing next run.
+      const reason = error instanceof Error ? error.message : String(error)
+      process.stderr.write(`[remote] previousRadar unavailable, spikes may re-alert: ${reason}\n`)
+      return null
+    }
   }
   return null
 }
