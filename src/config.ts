@@ -32,6 +32,11 @@ export const BUZZ = {
   anchorExcess: 1_200_000,
   floorExcess: 100,
   bands: { exceptional: 85, strong: 60, notable: 40 },
+  // Buzz at or above which a still-rising title is worth a named Slack line.
+  // Set to the "strong" edge — a major trailer drop or bigger — so an ordinary
+  // bump (the 40s) stays quiet and most days name nobody. Raise it to alert
+  // only on genuine cultural moments (85 = Odyssey/Superman level).
+  trendingAlert: 60,
   momentumDays: 7,
   fadingBelow: 0.9,
   cohortBuckets: [7, 30, 90, 365],

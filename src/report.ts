@@ -9,6 +9,16 @@ interface Step {
   detail: string
 }
 
+// A title spiking hard enough to be worth naming in the Slack message. Only the
+// genuinely notable ones — see BUZZ.trendingAlert — so an ordinary day carries
+// none and the section is dropped entirely.
+export interface Highlight {
+  title: string
+  points: number
+  band: string
+  rising: number
+}
+
 export interface RunReport {
   startedAt: string
   finishedAt: string
@@ -19,6 +29,7 @@ export interface RunReport {
   steps: Step[]
   warnings: string[]
   counts: Record<string, number>
+  highlights: Highlight[]
 }
 
 export class Run {
@@ -30,9 +41,14 @@ export class Run {
   readonly steps: Step[] = []
   readonly warnings: string[] = []
   readonly counts: Record<string, number> = {}
+  readonly highlights: Highlight[] = []
 
   step(name: string, status: Status, detail: string): void {
     this.steps.push({ name, status, detail })
+  }
+
+  highlight(h: Highlight): void {
+    this.highlights.push(h)
   }
 
   warn(message: string): void {
@@ -65,6 +81,7 @@ export class Run {
       steps: this.steps,
       warnings: this.warnings,
       counts: this.counts,
+      highlights: this.highlights,
     }
   }
 }

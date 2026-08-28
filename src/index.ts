@@ -177,6 +177,14 @@ async function main(): Promise<void> {
   run.count('confirmed', attention.confirmed)
   for (const [source, n] of Object.entries(attention.bySource)) run.count(`source.${source}`, n)
 
+  // Named Slack lines for titles spiking hard enough to be worth interrupting
+  // someone, fired only on the transition into trending — see trendingHighlights.
+  // Yesterday's published radar carries buzz, so we compare against it.
+  const before = await publish.previousRadar(today)
+  for (const h of buzz.trendingHighlights(titles, before?.titles ?? [], BUZZ.trendingAlert)) {
+    run.highlight({ title: h.title, points: h.points, band: h.band, rising: h.rising })
+  }
+
   const fired = alerts.build(titles, changes)
   run.count('alerts', fired.length)
   log(`[alert] ${fired.length} titles changed inside the alert window`)
