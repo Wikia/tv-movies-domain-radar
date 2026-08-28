@@ -177,6 +177,20 @@ async function main(): Promise<void> {
   run.count('confirmed', attention.confirmed)
   for (const [source, n] of Object.entries(attention.bySource)) run.count(`source.${source}`, n)
 
+  // Named Slack lines for titles spiking hard enough to be worth interrupting
+  // someone. Only the still-rising ones above the alert threshold, biggest
+  // first — most days this is empty and the section is dropped entirely.
+  for (const title of titles
+    .filter((t) => t.buzz?.spiking && t.buzz.points >= BUZZ.trendingAlert)
+    .sort((a, b) => (b.buzz?.points ?? 0) - (a.buzz?.points ?? 0))) {
+    run.highlight({
+      title: title.title,
+      points: title.buzz!.points,
+      band: title.buzz!.band,
+      rising: title.attention?.rising.length ?? 0,
+    })
+  }
+
   const fired = alerts.build(titles, changes)
   run.count('alerts', fired.length)
   log(`[alert] ${fired.length} titles changed inside the alert window`)

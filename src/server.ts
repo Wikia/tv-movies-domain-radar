@@ -57,6 +57,23 @@ async function publishedRadar(): Promise<string | null> {
   }
 }
 
+async function serveReady(res: http.ServerResponse): Promise<void> {
+  const published = await publishedRadar().catch(() => null)
+  if (published) {
+    sendJson(res, 200, { ok: true, source: 'published' })
+    return
+  }
+  const local = await readFile(RADAR_JSON, 'utf8').then(
+    () => true,
+    () => false,
+  )
+  if (local) {
+    sendJson(res, 200, { ok: true, source: 'local' })
+    return
+  }
+  sendJson(res, 503, { ok: false, error: 'no radar data available' })
+}
+
 async function serveRadar(res: http.ServerResponse): Promise<void> {
   const published = await publishedRadar()
   if (published) {
@@ -139,8 +156,15 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  if (route === '/health') {
+  // /live: the process is up. /ready: it can actually serve data — a pod that
+  // cannot reach scriptlr should be taken out of rotation rather than serving
+  // errors. /health is kept as an alias for anything already pointed at it.
+  if (route === '/live' || route === '/health') {
     sendJson(res, 200, { ok: true })
+    return
+  }
+  if (route === '/ready') {
+    void serveReady(res)
     return
   }
   if (route === '/api/radar') {

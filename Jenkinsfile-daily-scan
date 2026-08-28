@@ -280,6 +280,15 @@ def notifyBuild(report) {
     if (unconfigured) {
         done.add("_Not configured: ${unconfigured.join(', ')}_")
     }
+
+    // Only titles spiking hard enough to be worth naming (see BUZZ.trendingAlert).
+    // The pipeline already filters and sorts these, so an ordinary day sends none
+    // and this block adds nothing.
+    (report.highlights ?: []).each { h ->
+        def sources = h.rising >= 2 ? " · confirmed by ${h.rising} sources" : ''
+        done.add(":fire: *${h.title}* is trending — buzz ${h.points} (${h.band})${sources}")
+    }
+
     slackPost('#7AF371', done.join('\n'))
 }
 
