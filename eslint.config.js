@@ -2,7 +2,7 @@ import js from '@eslint/js'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['node_modules', 'out', 'data', 'web/dist', 'web/node_modules'] },
+  { ignores: ['node_modules', 'out', 'data'] },
   js.configs.recommended,
   // Type-aware rules, which is the point: the value ESLint adds over tsc here is
   // catching mishandled promises. A dropped await in this pipeline swallows the

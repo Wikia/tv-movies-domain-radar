@@ -5,7 +5,6 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 
 import * as alerts from './alerts.js'
-import * as artifact from './artifact.js'
 import * as buzz from './buzz.js'
 import { BUZZ, HORIZON_DAYS, ROOT, SCRIPTLR, SIGNALS, TMDB_TOKEN, YOUTUBE_KEY } from './config.js'
 import * as posters from './posters.js'
@@ -40,7 +39,6 @@ async function main(): Promise<void> {
       horizon: { type: 'string' },
       today: { type: 'string' },
       publish: { type: 'boolean' },
-      'no-render': { type: 'boolean' },
     },
   })
 
@@ -275,14 +273,9 @@ async function main(): Promise<void> {
     run.step('publish', 'skipped', pinned ? 'pinned --today' : 'no --publish')
   }
 
-  // 15 MB of HTML nothing in the hosted flow reads; kept for local runs.
-  if (values['no-render']) {
-    run.step('render', 'skipped', '--no-render')
-  } else {
-    await artifact.build(output)
-    run.step('render', 'ok', 'dashboard.html + dashboard.artifact.html')
-    log('[out] wrote out/dashboard.html + out/dashboard.artifact.html')
-  }
+  // The dashboard is a separate app (ux-platform/apps/tv-movies-radar) that reads
+  // the published radar.json from scriptlr. This process is headless: it fetches,
+  // scores and publishes, and renders no HTML.
 }
 
 function message(error: unknown): string {

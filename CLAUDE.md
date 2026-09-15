@@ -3,31 +3,27 @@
 Upcoming release calendar for the Fandom TV & Movies domain. Full detail in
 [`README.md`](README.md); this is the fast path.
 
+- **This repo is the headless data engine.** It scans, scores and publishes
+  `radar.json` to scriptlr — it renders no HTML and serves nothing. The dashboard
+  is a separate Next.js app that reads the published snapshot:
+  `ux-platform/apps/tv-movies-radar` (staff-only, on the shared platform).
 - **Entrypoint:** `src/index.ts` — `npm run scan` locally, `npm run scan:publish`
   in the daily Jenkins job (`Jenkinsfile-daily-scan`). Both are the same file;
-  `--publish` uploads and `--no-render` skips the 15 MB of HTML the cron discards.
+  `--publish` uploads the snapshot.
 - **Stack:** TypeScript on Node 20. **Zero runtime dependencies** (built-in
   `fetch`, `node:crypto`); `tsx` + `typescript` are devDependencies only. The
   server is raw `node:http`. Keep it that way.
-- **Outputs:** `out/radar.json` (source of truth), plus `out/dashboard.html` and
-  `out/dashboard.artifact.html`. All git-ignored.
+- **Outputs:** `out/radar.json` (source of truth), git-ignored. Published to
+  scriptlr; the dashboard app reads it from there.
 - **Inputs:** `neutron-api` and Wikipedia live (no keys, no `.env`), plus one
   optional file, `data/fandom_trending.csv` — the internal first-party trending
   export. Not committed, no fallback; the `/radar` skill pulls it fresh each run.
 - **Signals:** two, both attached rather than blended — `title.trend` (our own
   wiki traffic) and `title.buzz` (Wikipedia pageviews vs the title's own normal).
 - **Flags:** `--horizon N`, `--today YYYY-MM-DD`, `--publish`.
-- **Check:** `npm run check` (format, lint, typecheck, test, web build) — the
-  same four CI runs. `npm run backtest` separately before touching buzz scoring;
-  it hits Wikipedia live and cannot run in CI.
-- **`npm run typecheck` covers `src/` and `scripts/`, NOT `web/`.** The React app is typechecked by
-  its own `tsc -b`, which runs as part of `npm run web:build`. So a broken
-  component compiles clean at the root and the build fails instead — and if you
-  redirect that build's output you'll screenshot a stale bundle and think the
-  change landed. Never `web:build >/dev/null`; read its output.
-- **A JSX comment can't be a ternary branch's sibling.** `cond ? ( {/* … */}
-  <div/> ) : …` is a syntax error, and it bit this repo twice. Put the comment
-  above the statement or hoist the value to a named const.
+- **Check:** `npm run check` (format, lint, typecheck, test) — the same CI runs.
+  `npm run backtest` separately before touching buzz scoring; it hits Wikipedia
+  live and cannot run in CI.
 - **Before changing the buzz scoring, run `npm run backtest`** and compare. It
   replays the real detector over 120 days of history and reports precision
   against a control base rate. Current baseline: 87% of fires still elevated
@@ -128,23 +124,11 @@ into one number — you have rebuilt the thing that was deleted.
 - **Never render `title.image`** — it's the full-resolution original, averaging
   2.3 MB. Use `title.poster`, which `posters.ts` resolves to a signed resize URL
   or a local thumbnail.
-- **The artifact's CSP blocks external hosts**, so its poster art must be inlined
-  as data URIs. A remote `<img>` there fails silently.
-- **Test the artifact's inline script, don't just count elements.** A stale
-  selector once hid every row and shipped a blank page that looked exactly like
-  "the pipeline found nothing". `ROW_CLASS` is now shared by the renderer and the
-  script, the script bails if it finds no rows, and `build()` throws if it
-  renders none — keep all three.
-- **There are TWO dashboards and they must stay in step.** `src/artifact.ts`
-  renders the static/publishable page; `web/src` renders the React app on
-  `npm run serve`. Both show the schedule, Buzz and Trending. They drifted once
-  already — the signals shipped in the artifact only, so `localhost:8787` showed
-  none of them while happily serving the data in `/api/radar`. Adding a signal
-  means touching both, plus `web/src/types.ts`, which is a hand-written mirror
-  of `src/types.ts`.
-- **Theme tokens are duplicated** in `src/artifact.ts` and `web/src/index.css`.
-  Change one, change the other. The React side needs `@theme inline` so classes
-  resolve to `var(--c-*)` at runtime rather than being baked at build time.
+- **The dashboard lives in another repo.** It is `ux-platform/apps/tv-movies-radar`
+  (a staff-only Next.js app on the shared platform) which reads the published
+  `radar.json` from scriptlr via its own `/api/radar` proxy. Adding a signal here
+  means it also has to surface there — plus that app's hand-written `types.ts`,
+  which mirrors `src/types.ts`. This repo renders nothing itself.
 - **The diff baseline is the most recent snapshot from a PREVIOUS day**, never
   `latest.json` (which every run rewrites, so diffing against it made a second
   run in a day report nothing). Re-running is therefore idempotent. To test diff
@@ -199,9 +183,10 @@ into one number — you have rebuilt the thing that was deleted.
   views/day peak (2026-07-18). Superman 93, Avatar 90, Wicked 82. Don't retune
   the anchor to make more titles look hot — the whole point is that an ordinary
   trailer drop scores in the 40s-60s.
-- **Both dashboards must sort the buzz panel identically.** `ranked()` in
-  buzz.ts and the sort in `web/src/components/Buzz.tsx` are separate code; they
-  disagreed for one build and the React panel rendered visibly unordered.
+- **The dashboard must sort the buzz panel the same way this engine does.**
+  `ranked()` in buzz.ts and the sort in the dashboard's `Buzz` component
+  (`ux-platform/apps/tv-movies-radar`) are separate code; when they disagreed the
+  panel rendered visibly unordered.
 - **The heat palette is two colours for a measured reason.** red+amber clear
   colourblind separation; red→orange→yellow→green does not (orange/yellow
   normal-vision ΔE 13.6, red/green deutan ΔE 4.1). Validated with the dataviz

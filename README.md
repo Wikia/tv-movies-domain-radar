@@ -26,18 +26,11 @@ Node 20's built-in `fetch` is all it uses.
 
 ### Dashboard
 
-```bash
-npm run web:install   # first time only
-npm run dashboard     # radar + build + serve -> http://localhost:8787
-```
-
-For UI work, run the server and Vite side by side — Vite proxies `/api` to the
-server, so the dashboard hot-reloads against real data:
-
-```bash
-npm run serve      # terminal 1  (port 8787)
-npm run web:dev    # terminal 2  (Vite dev server, proxies /api)
-```
+This repo is headless — it renders nothing. The dashboard is a separate,
+staff-only Next.js app on the shared platform:
+[`ux-platform/apps/tv-movies-radar`](https://github.com/Wikia/ux-platform/tree/main/apps/tv-movies-radar).
+It reads the `radar.json` this engine publishes to scriptlr, via its own
+`/api/radar` proxy. To change what the dashboard shows, edit it there.
 
 ## What it deliberately does NOT do
 
@@ -657,54 +650,34 @@ baseline.
 
 ## Architecture
 
-The browser talks **only** to our own server, never to neutron-api:
-
 ```
-React (Tailwind)  ──/api/radar──▶  server  ──▶  out/radar.json
-                  ──/thumbs/*───▶  (poster cache)
+Jenkins daily scan  ──scores──▶  radar.json  ──publish──▶  scriptlr
+   (this repo)                                                 │
+                                                               ▼ /api/radar proxy
+                              dashboard app (ux-platform)  ──serves──▶ staff
 ```
 
-- **State.** The diff needs yesterday's snapshot. A browser has no yesterday —
-  only a server process can hold that.
-- **Unattended work.** The Slack notifier has to run with no browser open.
-- **CORS.** neutron-api only allows `*.metacritic.com` / `*.tvguide.com` origins,
-  and this is a standalone internal tool.
-
-The server is `node:http` with **no dependencies**; React/Vite/Tailwind are
-build-time only.
-
-| Route | Serves |
-|---|---|
-| `GET /api/radar` | the diffed calendar |
-| `GET /thumbs/<id>.jpg` | cached poster art |
-| `GET /health` | liveness probe |
-| `GET /*` | the built React app, with SPA fallback |
+- **State.** The diff needs yesterday's snapshot; a scheduled process holds that,
+  a browser can't.
+- **Unattended work.** The Slack notifier runs with no browser open.
+- **Split.** This repo fetches, diffs, scores and publishes — nothing more. The
+  dashboard is a separate staff-only app that reads the published snapshot from
+  scriptlr, because neutron-api's CORS and the internal scriptlr address both
+  rule out the browser talking to them directly.
 
 ## Outputs
 
 - **`out/radar.json`** — the single source of truth: `titles` (chronological),
-  `changes`, `alerts`, `counts`. Every surface reads this one file, so they
-  can't drift apart.
-- **`out/dashboard.html`** — self-contained page, data baked in.
-- **`out/dashboard.artifact.html`** — body-only fragment for publishing as a
-  shareable Artifact.
+  `changes`, `alerts`, `counts`. Published to scriptlr; the dashboard app reads
+  it from there.
 - **`data/snapshots/latest.json`** + a dated copy — the diff baseline. Git-ignored.
 - **`data/posters/<id>.jpg`** — cached poster thumbnails. Git-ignored.
 
 ## Theme
 
-Light and dark, with an explicit toggle that persists to `localStorage`. Until
-someone chooses, the page follows the OS — so all three viewer states resolve:
-system-light, system-dark, and an explicit choice that beats the OS in both
-directions.
-
-Tokens are duplicated in `src/artifact.ts` (CSS) and `web/src/index.css`
-(Tailwind) — the static page can't import from the React app. **Change one,
-change the other.** The React side declares its palette as plain custom
-properties and maps them through `@theme inline`, which is what lets a class
-like `bg-ground` follow the active theme instead of being baked at build time.
-The static page scopes its tokens to `.radar` rather than `:root`, so its toggle
-can't fight the theme the Artifact host stamps on the root element.
+Theme (light/dark) lives with the dashboard app, not here — this engine renders
+no UI. The validated heat palette (colourblind-checked red+amber bands) travels
+with that app's stylesheet.
 
 ## Poster art
 
@@ -721,27 +694,23 @@ sampled at 13 MB**. Never render `title.image` directly; use `title.poster`.
    run the radar a few times to fill it. This is the current default.
 
 Neither available → titles fall back to an initials tile. Art is an enhancement;
-nothing depends on it.
-
-The Artifact fragment **inlines** art as data URIs, because its CSP blocks every
-external host. Inlining is budgeted (7 MB) to stay inside the 16 MB cap.
+nothing depends on it. In deployment `FASTLY_IMAGE_SECRET` is set, so published
+`radar.json` carries absolute signed URLs the remote dashboard can render.
 
 ## Layout
 
 ```
-src/                    # pipeline + server (zero runtime dependencies)
-├── index.ts            # entrypoint: fetch, diff, write, report
-├── server.ts           # static host + JSON API for the dashboard
+src/                    # headless pipeline (zero runtime dependencies)
+├── index.ts            # entrypoint: fetch, diff, score, write, publish, report
 ├── config.ts           # horizon, alert window, API constants
 ├── types.ts            # data model
 ├── schedule.ts         # date maths and chronological ordering
 ├── snapshot.ts         # save/load/diff — the "don't miss anything" mechanism
 ├── alerts.ts           # which changes are worth surfacing
-├── artifact.ts         # self-contained HTML page + artifact fragment
 ├── posters.ts          # signed resize URLs or a local thumbnail cache
-└── sources/neutron.ts  # the only network dependency
-
-web/                    # React + Tailwind dashboard (build-time deps only)
+├── remote.ts           # scriptlr read/write
+├── publish.ts          # snapshot publishing
+└── sources/            # neutron, wikipedia, news, youtube, tmdb, fandom
 ```
 
 ## Status
