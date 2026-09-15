@@ -1,0 +1,64 @@
+// Builds the dashboard container image and pushes it to Artifactory.
+//
+// This is deliberately separate from Jenkinsfile-daily-scan. That job is the
+// data PRODUCER — it runs the scan and publishes radar.json to scriptlr. This
+// job produces the SERVER IMAGE that reads what the scan wrote. They share
+// nothing and run on different cadences: the scan is a daily cron, this builds
+// on demand when the server code changes.
+//
+// The flow, matching the netboxtool/go-links apps in argocd-applications:
+//   1. this job builds and pushes  artifactory.wikia-inc.com/domain-tv-movies/tv-movies-domain-radar:<git-sha>
+//   2. a human bumps that <git-sha> in argocd-applications/apps/tv-movies-domain-radar/values.yaml
+//   3. argocd rolls it out to kube-sjc-prod
+//
+// There is no argocd-image-updater in that repo — the tag bump is a reviewed
+// commit, on purpose.
+
+@Library('GlobalSharedLibrary') _
+
+// Where the image lands. The team segment matches the `team` label and the
+// engineering-teams deployment-label `domain-tv-movies`.
+def registry = 'artifactory.wikia-inc.com'
+def imageRepo = 'domain-tv-movies/tv-movies-domain-radar'
+
+pipeline {
+    // The Docker-capable agent, the same label the platform build jobs use. The
+    // daily scan runs on a plain 'linux' node because it only needs Node; this
+    // needs a docker daemon to build and push.
+    agent { label 'docker-daemon' }
+
+    triggers {
+        // Build a fresh image on every push to main (via the GitHub webhook /
+        // plugin). The tag is the commit SHA, so each merge produces an exactly
+        // identified image; promoting it is still a reviewed tag bump in
+        // argocd-applications, never automatic.
+        githubPush()
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '25'))
+        disableConcurrentBuilds()
+    }
+
+    stages {
+        stage('Build and push') {
+            steps {
+                script {
+                    // Short SHA is the image tag, so the tag in argocd points at
+                    // an exact commit. Matches the netboxtool/orchestrator convention.
+                    def sha = sh(script: 'git rev-parse --short=7 HEAD', returnStdout: true).trim()
+                    def image = "${registry}/${imageRepo}:${sha}"
+
+                    sh "docker build -t ${image} ."
+                    sh "docker push ${image}"
+
+                    currentBuild.description = image
+                    echo "Pushed ${image}"
+                    echo "Next: set image.tag to '${sha}' in " +
+                        "argocd-applications/apps/tv-movies-domain-radar/values.yaml and open a PR."
+                }
+            }
+        }
+    }
+}

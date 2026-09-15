@@ -1,0 +1,17 @@
+# Everything the image build does not need. node_modules is reinstalled from the
+# lockfile inside the build stage; web/dist is rebuilt; out/ and data/ are runtime
+# state the deployed server never reads (it pulls scriptlr).
+node_modules
+web/node_modules
+web/dist
+out
+data
+.git
+.github
+.idea
+.env
+.env.*
+*.log
+Jenkinsfile*
+docs
+**/*.test.ts
