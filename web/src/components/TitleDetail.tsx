@@ -108,6 +108,44 @@ export function TitleDetail({ title, onBack }: { title: Title; onBack: () => voi
           </p>
         </>
       )}
+
+      {title.presence && (
+        <>
+          <h2 className="section-label mt-10 mb-3 border-b border-line pb-2 text-ink">
+            Fandom coverage
+          </h2>
+          {title.presence.articles.length > 0 ? (
+            <>
+              <p className="text-[13px] leading-relaxed text-ink-2">
+                {title.presence.wikis} wiki{title.presence.wikis === 1 ? '' : 's'},{' '}
+                {title.presence.pages} article{title.presence.pages === 1 ? '' : 's'}
+              </p>
+              <div className="mt-2 divide-y divide-line-soft">
+                {title.presence.articles.map((article) => (
+                  <div
+                    key={`${article.wikiId}-${article.title}`}
+                    className="flex items-baseline gap-3 py-2.5"
+                  >
+                    <a
+                      href={article.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-[550] text-accent hover:underline"
+                    >
+                      {article.title}
+                    </a>
+                    <span className="figure ml-auto text-xs text-ink-3">{article.sitename}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-[13px] leading-relaxed text-ink-2">
+              No Fandom wiki or article found for this title — a coverage gap.
+            </p>
+          )}
+        </>
+      )}
     </div>
   )
 }
