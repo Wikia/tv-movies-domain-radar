@@ -403,7 +403,9 @@ function renderSchedule(titles: Title[], horizonDays: number, art: Art, alerts: 
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
             ${poster(t, art.has(t.id), 'thumb')}
             <span class="t">${esc(t.title)}${
-              tags || wiki || agree || noWiki ? `<span class="tags">${tags}${agree}${wiki}${noWiki}</span>` : ''
+              tags || wiki || agree || noWiki
+                ? `<span class="tags">${tags}${agree}${wiki}${noWiki}</span>`
+                : ''
             }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
