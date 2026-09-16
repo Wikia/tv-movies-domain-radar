@@ -146,8 +146,10 @@ async function main(): Promise<void> {
     run.count('withWiki', presenceResult.withWiki)
     run.count('noWiki', presenceResult.noWiki)
     return {
-      status: presenceResult.failed > presenceResult.queried / 2 ? 'degraded' : 'ok',
-      detail: `${presenceResult.withWiki} with wiki, ${presenceResult.noWiki} without`,
+      status: presenceResult.failed > 0 ? 'degraded' : 'ok',
+      detail:
+        `${presenceResult.withWiki} with wiki, ${presenceResult.noWiki} without` +
+        (presenceResult.failed > 0 ? `, ${presenceResult.failed} failed` : ''),
     }
   })
 

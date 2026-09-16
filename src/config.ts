@@ -52,6 +52,7 @@ export const PRESENCE = {
   limit: 100,
   hubs: ['movies', 'tv'],
   concurrency: 4,
+  timeoutMs: 15_000,
 } as const
 
 export const WIKI_USER_AGENT =
