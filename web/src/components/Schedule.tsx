@@ -216,11 +216,6 @@ function Row({
               </span>
             </Tag>
           )}
-          {title.presence && title.presence.wikis === 0 && (
-            <Tag tone="muted">
-              <span title="No Fandom wiki or article found for this title">no wiki</span>
-            </Tag>
-          )}
         </span>
       </span>
 
