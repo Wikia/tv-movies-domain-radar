@@ -14,6 +14,7 @@ import { Run, summarise, type Status } from './report.js'
 import { applyDates, byReleaseDate } from './schedule.js'
 import * as snapshot from './snapshot.js'
 import * as fandom from './sources/fandom.js'
+import * as fandomSearch from './sources/fandom-search.js'
 import { fetchUpcoming } from './sources/neutron.js'
 import * as news from './sources/news.js'
 import * as tmdb from './sources/tmdb.js'
@@ -132,6 +133,23 @@ async function main(): Promise<void> {
         `trending export is ${weeksOld} weeks old — a stale signal shown as this week's is worse than none`,
       )
   }
+
+  await record('presence', async () => {
+    const presenceResult = await fandomSearch.attach(titles)
+    log(
+      `[presence] ${presenceResult.queried} queried, ` +
+        `${presenceResult.withWiki} with wiki, ${presenceResult.noWiki} without` +
+        (presenceResult.failed > 0 ? `, ${presenceResult.failed} failed` : ''),
+    )
+    run.count('withWiki', presenceResult.withWiki)
+    run.count('noWiki', presenceResult.noWiki)
+    return {
+      status: presenceResult.failed > 0 ? 'degraded' : 'ok',
+      detail:
+        `${presenceResult.withWiki} with wiki, ${presenceResult.noWiki} without` +
+        (presenceResult.failed > 0 ? `, ${presenceResult.failed} failed` : ''),
+    }
+  })
 
   const articles = await wikipedia.resolveArticles(titles, today)
   const series = await wikipedia.fetchSeries(

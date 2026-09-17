@@ -25,6 +25,21 @@ export interface Title {
   buzz?: Buzz
 
   attention?: Attention
+
+  presence?: TitlePresence
+}
+
+export interface PresenceArticle {
+  title: string
+  sitename: string
+  wikiId: number
+  url: string
+}
+
+export interface TitlePresence {
+  pages: number
+  wikis: number
+  articles: PresenceArticle[]
 }
 
 export interface SourceSignal {

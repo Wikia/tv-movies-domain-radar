@@ -47,6 +47,14 @@ export const BUZZ = {
   retryMissAfterDays: 7,
 } as const
 
+export const PRESENCE = {
+  searchUrl: 'https://services.fandom.com/unified-search/vais-page-search',
+  limit: 100,
+  hubs: ['movies', 'tv'],
+  concurrency: 4,
+  timeoutMs: 15_000,
+} as const
+
 export const WIKI_USER_AGENT =
   'tv-movies-domain-radar/0.1 (https://github.com/fandom; tv-movies-domain@fandom.com)'
 
