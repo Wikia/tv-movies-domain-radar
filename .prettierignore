@@ -1,6 +1,4 @@
 node_modules/
 out/
 data/
-web/dist/
 package-lock.json
-web/package-lock.json
