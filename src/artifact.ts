@@ -371,6 +371,10 @@ function renderSchedule(titles: Title[], horizonDays: number, art: Art, alerts: 
                 `${t.trend.domain} · trending ${t.trend.trendingScore.toFixed(2)}`,
               )}">${t.trend.match === 'exact' ? 'wiki hot' : 'franchise hot'}</span>`
             : ''
+          const noWiki =
+            t.presence && t.presence.wikis === 0
+              ? `<span class="tag" title="No Fandom wiki or article found for this title">no wiki</span>`
+              : ''
           // How many independent sources agree. Neutral, never a heat colour —
           // the ramp owns red-to-green for magnitude, and agreement is a
           // different dimension; one colour meaning two things dilutes both.
@@ -399,7 +403,9 @@ function renderSchedule(titles: Title[], horizonDays: number, art: Art, alerts: 
             <span class="when">${esc(fmtDate(t.releaseDate))}</span>
             ${poster(t, art.has(t.id), 'thumb')}
             <span class="t">${esc(t.title)}${
-              tags || wiki || agree ? `<span class="tags">${tags}${agree}${wiki}</span>` : ''
+              tags || wiki || agree || noWiki
+                ? `<span class="tags">${tags}${agree}${wiki}${noWiki}</span>`
+                : ''
             }</span>
             <span class="k">${t.type === 'movie' ? 'Film' : 'TV'}</span>
             <span class="cg g">${esc(t.genres.slice(0, 2).join(', ')) || '—'}</span>
@@ -512,6 +518,21 @@ function renderDetails(titles: Title[], art: Art): string {
             : ''
         }
         ${fandom}
+        ${
+          t.presence
+            ? t.presence.articles.length > 0
+              ? `<h3>Fandom coverage</h3>
+                 <p class="snote">${t.presence.wikis} wiki${t.presence.wikis === 1 ? '' : 's'}, ${t.presence.pages} article${t.presence.pages === 1 ? '' : 's'}</p>
+                 ${t.presence.articles
+                   .map(
+                     (a) =>
+                       `<div class="wiki"><div class="wtop"><span class="wn"><a class="jump" href="${esc(a.url)}" target="_blank" rel="noreferrer">${esc(a.title)}</a></span><span class="wd">${esc(a.sitename)}</span></div></div>`,
+                   )
+                   .join('')}`
+              : `<h3>Fandom coverage</h3>
+                 <p class="snote">No Fandom wiki or article found for this title — a coverage gap.</p>`
+            : ''
+        }
         <p class="snote"><a href="https://www.fandom.com/search?query=${encodeURIComponent(t.title)}" target="_blank" rel="noreferrer">Search Fandom for this title &rarr;</a></p>
       </div>`
     })
