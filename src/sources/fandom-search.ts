@@ -31,7 +31,7 @@ const HUBS: ReadonlySet<string> = new Set(PRESENCE.hubs)
 
 async function searchTitle(title: string): Promise<PresenceArticle[]> {
   const url = new URL(PRESENCE.searchUrl)
-  url.searchParams.set('query', title)
+  url.searchParams.set('query', `"${title}"`)
   url.searchParams.set('lang', 'en')
   url.searchParams.set('namespace', '0')
   url.searchParams.set('page', '0')
